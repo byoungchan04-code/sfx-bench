@@ -4,8 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>효과음 작업대</title>
+<meta name="theme-color" content="#13161e">
+<meta name="description" content="층을 쌓아 만드는 효과음 합성기">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <!--
   효과음 작업대. 브라우저로 열어서 쓴다. 인터넷 연결이 없어도 된다.
+  https로 올리면 휴대폰에 앱으로 설치된다 (manifest.webmanifest, sw.js). 이 파일을 고치면 sw.js의 VERSION도 올린다.
   소리 하나 = 층(layer) 여러 개. 층마다 음원(톤/FM/노이즈), 높이, 모양(엔벨로프), 필터, 질감을 정한다.
   전체에 울림(리버브), 메아리(딜레이), 압축을 걸고, 최대 음량에 맞춰 48kHz 16비트 스테레오 WAV로 내보낸다.
   만든 값은 이 브라우저에 저장된다. 다른 컴퓨터로 옮기거나 저장소에 남기려면 "설정 저장"으로 JSON을 받아 둔다.
@@ -59,7 +65,21 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
 .p{display:grid;grid-template-columns:86px 1fr 70px;align-items:center;gap:8px;min-height:24px}
 .pl{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pv{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;cursor:text}
-.p input[type=range]{width:100%;margin:0;accent-color:var(--lc,var(--accent))}
+.p input[type=range]{-webkit-appearance:none;appearance:none;width:100%;margin:0;height:22px;background:transparent;touch-action:pan-y;cursor:pointer}
+.p input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--line2);border-radius:2px}
+.p input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:var(--lc,var(--accent));border:0}
+.p input[type=range]::-moz-range-track{height:4px;background:var(--line2);border-radius:2px}
+.p input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--lc,var(--accent));border:0}
+.pl{cursor:help}
+.layer.closed .lbody{display:none}
+.layer.closed .lhead{border-bottom:0}
+.fold{background:none;border:0;color:var(--dim);font-size:14px;width:22px;padding:0;cursor:pointer}
+.cuesel{display:none;width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;font:600 16px ui-monospace,Consolas,monospace}
+#fab{display:none;position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));gap:10px;align-items:center;z-index:10}
+#fab .btn{box-shadow:0 4px 16px #0009;touch-action:manipulation}
+#fPlay{width:64px;height:64px;border-radius:50%;font-size:22px;padding:0}
+#fVar{height:46px;border-radius:23px;padding:0 18px;font-size:14px}
+#bInstall{display:none}
 .p select{grid-column:2/4;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:3px 6px;font:inherit}
 .master{--lc:#b9c2d6}
 .addrow{display:flex;gap:8px;margin:4px 0 20px}
@@ -68,11 +88,37 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
 .help{color:var(--dim);font-size:12px;max-width:900px;margin-top:18px;line-height:1.7}
 .help b{color:var(--text);font-weight:600}
 @media (max-width:760px){
-  body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}
-  header{grid-column:1}
-  header .keys{display:none}
-  aside{max-height:150px;border-right:0;border-bottom:1px solid var(--line)}
-  main{padding:12px 16px 60px}
+  body{display:block;height:auto;font-size:14px}
+  header{padding:10px 16px}
+  header .keys,header .hint{display:none}
+  #bInstall{margin-left:auto}
+  aside{display:none}
+  main{overflow:visible;padding:12px 16px calc(110px + env(safe-area-inset-bottom))}
+  .top{display:block}
+  .top h2{display:none}
+  .cuesel{display:block}
+  #cueHint{display:block;margin-top:6px}
+  .bar .sep,#bPlay,#bVar{display:none}
+  .bar .btn{flex:1 1 auto;padding:9px 10px;touch-action:manipulation}
+  label.chk{padding:6px 0}
+  .wavebox{height:150px}
+  .waveinfo span:last-child{display:none}
+  .lhead{flex-wrap:wrap;padding:8px 10px}
+  .lhead .lname{flex:1 1 calc(100% - 64px);width:auto;min-width:80px;font-size:15px}
+  .lhead .llen{padding-left:30px}
+  .lhead .mv{display:none}
+  .btn.small{padding:7px 10px;font-size:13px;touch-action:manipulation}
+  .lbody{grid-template-columns:1fr;padding:4px 12px 12px}
+  .p{grid-template-columns:1fr auto;gap:0 8px;padding:3px 0}
+  .p .pl{grid-row:1;grid-column:1}
+  .p .pv{grid-row:1;grid-column:2;font-size:13px;padding:2px 0 2px 12px}
+  .p input[type=range]{grid-row:2;grid-column:1/3;height:34px}
+  .p input[type=range]::-webkit-slider-thumb{width:24px;height:24px;margin-top:-10px}
+  .p input[type=range]::-moz-range-thumb{width:24px;height:24px}
+  .p select{grid-row:2;grid-column:1/3;padding:9px 8px;font-size:15px;margin:2px 0 4px}
+  .sec h4{margin-top:12px}
+  #fab{display:flex}
+  #status{left:16px;right:16px;bottom:calc(92px + env(safe-area-inset-bottom));text-align:center}
 }
 </style>
 </head>
@@ -81,10 +127,12 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
   <h1>효과음 작업대</h1>
   <span class="hint">층을 쌓아 만드는 효과음 합성기</span>
   <span class="keys">Space 듣기 · V 변주 듣기 · Ctrl+Z 되돌리기 · 숫자를 두 번 누르면 직접 입력</span>
+  <button class="btn" id="bInstall">앱으로 설치</button>
 </header>
 <aside id="list"></aside>
 <main>
   <div class="top">
+    <select id="cueSel" class="cuesel" aria-label="소리 고르기"></select>
     <h2 id="cueName"></h2>
     <span class="hint" id="cueHint"></span>
   </div>
@@ -98,6 +146,7 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
     <button class="btn" id="bReset" title="이 소리를 처음 프리셋으로 돌린다">처음 값으로</button>
     <span class="sep"></span>
     <button class="btn" id="bWav">WAV 저장</button>
+    <button class="btn" id="bShare" hidden title="WAV를 다른 앱(드라이브, 메신저 등)으로 보낸다">공유</button>
     <button class="btn" id="bZip" title="변주 개수만큼 WAV를 만들어 zip 하나로 받는다">변주 묶음 저장</button>
     <span class="sep"></span>
     <label class="chk"><input type="checkbox" id="auto"> 바꾸면 바로 듣기</label>
@@ -129,6 +178,7 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
     <br><b>음량</b> — "최대 음량"은 소리마다 다르게 잡혀 있다 (버튼 소리는 작게, 폭발은 크게). 세세한 균형은 사운드 보드의 volume_db로 맞춘다.
   </div>
 </main>
+<div id="fab"><button class="btn" id="fVar">변주</button><button class="btn primary" id="fPlay" aria-label="듣기">▶</button></div>
 <div id="status"></div>
 
 <script>
@@ -750,19 +800,27 @@ function slider(obj, key, d, after){
     obj[key] = fromPos(d, inp.value/1000); val.textContent = fmt(d, obj[key]); after && after(); changed(false);
   });
   inp.addEventListener('change', () => { editing = false; changed(true); });
-  val.addEventListener('dblclick', () => {
+  val.title = COARSE ? '눌러서 직접 입력' : '두 번 눌러 직접 입력';
+  val.addEventListener(COARSE ? 'click' : 'dblclick', () => {
     const s = prompt(`${d.t} (${d.min} ~ ${d.max})`, obj[key]); if (s == null) return;
     const x = parseFloat(s); if (!isFinite(x)) return;
     pushHistory(); obj[key] = clamp(x, d.min, d.max);
     inp.value = Math.round(toPos(d, obj[key])*1000); val.textContent = fmt(d, obj[key]); after && after(); changed(true);
   });
-  return h('div', {class:'p', title:d.tip||''}, h('span',{class:'pl'}, d.t), inp, val);
+  return h('div', {class:'p', title:d.tip||''}, label(d), inp, val);
 }
+// 이름을 누르면 설명이 뜬다 (휴대폰에서는 마우스를 올려 볼 수 없어서)
+const label = (d) => h('span', {class:'pl', onclick:() => status(d.tip ? `${d.t}: ${d.tip}` : d.t)}, d.t);
 function select(obj, key, d){
   const s = h('select', {}, d.opts.map(([v,t]) => h('option', {value:v, selected: obj[key]===v}, t)));
   s.addEventListener('change', () => { pushHistory(); obj[key] = s.value; buildEditor(); changed(true); });
-  return h('div', {class:'p'}, h('span',{class:'pl'}, d.t), s);
+  return h('div', {class:'p'}, label(d), s);
 }
+// 층 카드를 접어 둔 상태. 휴대폰에서는 처음에 첫 층만 펼친다
+const COARSE = matchMedia('(pointer: coarse)').matches;
+const NARROW = () => matchMedia('(max-width: 760px)').matches;
+const folded = {};
+const isFolded = (i) => folded[cur+':'+i] ?? (NARROW() && i > 0);
 const lenText = (l) => `${fmt({u:'s'}, l.delay)}부터 ${fmt({u:'s'}, layerLen(l))}`;
 
 function layerCard(l, i){
@@ -771,13 +829,16 @@ function layerCard(l, i){
   const upd = () => { len.textContent = lenText(l); };
   const on = h('input', {type:'checkbox', title:'켜기/끄기'}); on.checked = l.on;
   on.addEventListener('change', () => { pushHistory(); l.on = on.checked; card.classList.toggle('off', !l.on); changed(true); });
+  const fold = h('button', {class:'fold', title:'접기/펼치기', onclick:() => {
+    folded[cur+':'+i] = !isFolded(i); card.classList.toggle('closed', isFolded(i)); fold.textContent = isFolded(i) ? '▸' : '▾';
+  }}, isFolded(i) ? '▸' : '▾');
   const head = h('div', {class:'lhead'},
-    on,
+    fold, on,
     h('input', {class:'lname', value:l.name||'', placeholder:'층 '+(i+1), oninput:(e) => { l.name = e.target.value; save(); }}),
     len,
     h('button', {class:'btn small'+(l.solo?' on':''), title:'이 층만 듣기 (저장할 때는 모든 층이 들어간다)', onclick:() => { l.solo = !l.solo; buildEditor(); changed(true); }}, '혼자'),
-    h('button', {class:'btn small', title:'위로', disabled: i===0, onclick:() => { pushHistory(); s.layers.splice(i-1, 0, s.layers.splice(i,1)[0]); buildEditor(); changed(true); }}, '↑'),
-    h('button', {class:'btn small', title:'아래로', disabled: i===s.layers.length-1, onclick:() => { pushHistory(); s.layers.splice(i+1, 0, s.layers.splice(i,1)[0]); buildEditor(); changed(true); }}, '↓'),
+    h('button', {class:'btn small mv', title:'위로', disabled: i===0, onclick:() => { pushHistory(); s.layers.splice(i-1, 0, s.layers.splice(i,1)[0]); buildEditor(); changed(true); }}, '↑'),
+    h('button', {class:'btn small mv', title:'아래로', disabled: i===s.layers.length-1, onclick:() => { pushHistory(); s.layers.splice(i+1, 0, s.layers.splice(i,1)[0]); buildEditor(); changed(true); }}, '↓'),
     h('button', {class:'btn small', title:'복제', disabled: s.layers.length>=8, onclick:() => { pushHistory(); const c = structuredClone(l); c.solo = false; s.layers.splice(i+1, 0, c); buildEditor(); changed(true); }}, '복제'),
     h('button', {class:'btn small', title:'지우기', disabled: s.layers.length<=1, onclick:() => { pushHistory(); s.layers.splice(i,1); buildEditor(); changed(true); }}, '✕'),
   );
@@ -791,7 +852,7 @@ function layerCard(l, i){
     }
     body.append(box);
   }
-  const card = h('div', {class:'layer'+(l.on?'':' off'), style:`--lc:${color}`}, head, body);
+  const card = h('div', {class:'layer'+(l.on?'':' off')+(isFolded(i)?' closed':''), style:`--lc:${color}`}, head, body);
   return card;
 }
 
@@ -815,19 +876,25 @@ function buildEditor(){
 }
 
 function buildList(){
-  const el = $('#list'); el.innerHTML = '';
+  const el = $('#list'), sel = $('#cueSel'); el.innerHTML = ''; sel.innerHTML = '';
   const groups = [...GROUPS]; if (custom.length) groups.push(['내 소리', custom]);
   for (const [g, names] of groups){
     el.append(h('div', {class:'grp'}, g));
+    const og = h('optgroup', {label:g});
     for (const n of names){
       el.append(h('button', {class:'cue'+(n===cur?' cur':'')+(isChanged(n)?' changed':''), 'data-n':n, title: isChanged(n) ? '프리셋에서 바뀜' : '', onclick:() => selectCue(n)},
         h('span', {}, n), h('i', {class:'mod'})));
+      og.append(h('option', {value:n, selected: n===cur}, optText(n)));
     }
+    sel.append(og);
   }
 }
+const optText = (n) => isChanged(n) ? `${n}  •` : n;
 function markOne(n){
   const b = document.querySelector(`.cue[data-n="${CSS.escape(n)}"]`);
   if (b){ const c = isChanged(n); b.classList.toggle('changed', c); b.title = c ? '프리셋에서 바뀜' : ''; }
+  const o = [...$('#cueSel').options].find(o => o.value === n);
+  if (o) o.textContent = optText(n);
 }
 function selectCue(n){
   cur = n; save(); buildList(); buildEditor(); refresh($('#auto').checked);
@@ -932,6 +999,9 @@ function mutate(amt){
 // ---------- 버튼 ----------
 $('#bPlay').onclick = play;
 $('#bVar').onclick = playVariant;
+$('#fPlay').onclick = play;
+$('#fVar').onclick = playVariant;
+$('#cueSel').onchange = (e) => selectCue(e.target.value);
 $('#waveBox').onclick = play;
 $('#bMutS').onclick = () => mutate(0.06);
 $('#bMutL').onclick = () => mutate(0.2);
@@ -1009,6 +1079,29 @@ document.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); undo(); }
 });
 window.addEventListener('resize', drawWave);
+
+// 공유: 휴대폰에서 WAV를 드라이브나 메신저로 바로 보낸다
+const canShareFiles = (() => { try { return !!navigator.canShare && navigator.canShare({files:[new File([new Uint8Array(4)], 'a.wav', {type:'audio/wav'})]}); } catch(e){ return false; } })();
+$('#bShare').hidden = !canShareFiles;
+$('#bShare').onclick = async () => {
+  const r = await renderSound(snd(), {seed:1});
+  try { await navigator.share({files:[new File([wavBytes(r)], `${cur}.wav`, {type:'audio/wav'})], title:`${cur}.wav`}); }
+  catch(e){ if (e.name !== 'AbortError') status('공유하지 못했다'); }
+};
+
+// 앱으로 설치 (https로 열었을 때만)
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; $('#bInstall').style.display = 'inline-block'; });
+$('#bInstall').onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#bInstall').style.display = 'none';
+};
+window.addEventListener('appinstalled', () => { $('#bInstall').style.display = 'none'; status('설치했다. 이제 인터넷 없이도 열린다'); });
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  let had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) status('새 버전을 받았다. 앱을 닫았다가 다시 열면 적용된다', true); had = true; });
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 
 load(); buildList(); buildEditor(); refresh(false);
 </script>
