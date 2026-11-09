@@ -80,6 +80,10 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
 #fPlay{width:64px;height:64px;border-radius:50%;font-size:22px;padding:0}
 #fVar{height:46px;border-radius:23px;padding:0 18px;font-size:14px}
 #bInstall{display:none}
+.smpbox{margin:2px 0 6px}
+.smpbtns{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+canvas.smp{width:100%;height:56px;display:block;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+.p.chkrow{cursor:pointer}
 .p select{grid-column:2/4;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:3px 6px;font:inherit}
 .master{--lc:#b9c2d6}
 .addrow{display:flex;gap:8px;margin:4px 0 20px}
@@ -158,6 +162,8 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
   <div id="layers"></div>
   <div class="addrow">
     <button class="btn" id="bAdd">+ 층 추가</button>
+    <button class="btn" id="bAddS" title="녹음이나 소리 파일을 쓰는 층을 더한다">+ 녹음 층 추가</button>
+    <input type="file" id="fSample" accept="audio/*" hidden>
   </div>
   <div id="master"></div>
 
@@ -175,6 +181,8 @@ label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointe
     <b>레트로 느낌을 덜어내는 법</b> — 소리 하나를 여러 층으로 쌓는다. 앞부분의 짧은 <b>타격</b>(노이즈를 아주 짧게), 가운데의 <b>몸통</b>(톤이나 FM), 끝에 남는 <b>꼬리</b>(울림·메아리)를 나눠 만든다.
     사각파 하나만 쓰기보다 톱니파를 여러 겹 어긋나게 겹치고 필터로 고음을 깎으면 부드럽고 두꺼워진다. FM 배율을 1.41, 2.76처럼 정수가 아닌 값으로 두면 금속·종 소리가 된다.
     <b>변주 묶음</b>으로 받은 WAV 여러 개를 Godot의 SoundCue <code>streams</code>에 함께 넣으면 부를 때마다 하나씩 골라 같은 소리가 덜 반복된다.
+    <br><b>녹음</b> — 층 종류를 "녹음"으로 고르면 마이크로 녹음하거나 소리 파일(WAV, MP3 등)을 불러와 쓸 수 있다. 자르기, 빠르기(높이), 거꾸로 재생, 필터, 찌그러짐을 그대로 걸 수 있고 합성 층과 섞인다.
+    녹음은 이 브라우저에 따로 저장된다. "설정 저장" JSON에 녹음도 함께 들어간다.
     <br><b>음량</b> — "최대 음량"은 소리마다 다르게 잡혀 있다 (버튼 소리는 작게, 폭발은 크게). 세세한 균형은 사운드 보드의 volume_db로 맞춘다.
   </div>
 </main>
@@ -198,6 +206,7 @@ const LAYER_DEFAULT = {
   delay:0, attack:0.003, hold:0, decay:0.3, dcurve:0.5, gain:0.7,
   filter:'none', cut0:2000, cut1:2000, sweep:0.2, q:1,
   drive:0, pulseShape:'sine', pulseRate:8, pulseDepth:0, pan:0,
+  sample:'', sStart:0, sEnd:0, reverse:false, rate0:1, rate1:1,
 };
 const MASTER_DEFAULT = {
   revMix:0.15, revSize:1.0, revDamp:0.5, dlyMix:0, dlyTime:0.18, dlyFb:0.3,
@@ -215,6 +224,10 @@ const PD = {
   density:{t:'튀는 양',min:0,max:1,u:'%',tip:'지직 노이즈에서 불꽃이 얼마나 자주 튀는지'},
   f0:{t:'시작 높이',min:20,max:12000,sc:'log',u:'Hz'},
   f1:{t:'끝 높이',min:20,max:12000,sc:'log',u:'Hz'},
+  rate0:{t:'시작 빠르기',min:0.25,max:4,sc:'log',u:'rate',tip:'녹음을 재생하는 빠르기. 빠르면 높고 짧아지고, 느리면 낮고 길어진다 (12반음 = 두 배)'},
+  rate1:{t:'끝 빠르기',min:0.25,max:4,sc:'log',u:'rate',tip:'끝날 때의 빠르기. 시작과 다르면 재생하면서 높이가 미끄러진다'},
+  sStart:{t:'자르기 시작',min:0,max:1,u:'s',tip:'녹음에서 이 지점부터 쓴다'},
+  sEnd:{t:'자르기 끝',min:0,max:1,u:'s',tip:'녹음에서 이 지점까지 쓴다'},
   glide:{t:'바뀌는 시간',min:0.001,max:4,sc:'log',u:'s',tip:'시작 높이에서 끝 높이까지 가는 데 걸리는 시간'},
   pcurve:{t:'바뀌는 곡선',min:-1,max:1,tip:'+ 쪽이면 처음에 확 바뀌고, - 쪽이면 천천히 시작해서 나중에 바뀐다'},
   vibRate:{t:'떨림 빠르기',min:0.1,max:30,sc:'log',u:'Hz'},
@@ -250,24 +263,34 @@ const MD = {
   count:{t:'변주 개수',min:1,max:8,step:1,u:'i',tip:'변주 묶음 저장과 전체 내보내기에서 만들 WAV 개수'},
 };
 const SEL = {
-  src:{t:'종류',opts:[['tone','톤'],['fm','FM (금속·종)'],['noise','노이즈']]},
+  src:{t:'종류',opts:[['tone','톤'],['fm','FM (금속·종)'],['noise','노이즈'],['sample','녹음']]},
   wave:{t:'파형',opts:[['sine','사인 (둥근)'],['triangle','삼각 (부드러운)'],['sawtooth','톱니 (밝은)'],['square','사각 (속 빈)']]},
   noise:{t:'노이즈 색',opts:[['white','흰색 (쉭)'],['pink','분홍 (바람)'],['brown','갈색 (웅)'],['crackle','지직 (불꽃)']]},
   filter:{t:'필터',opts:[['none','없음'],['lowpass','고음 깎기'],['highpass','저음 깎기'],['bandpass','가운데만']]},
   pulseShape:{t:'박동 모양',opts:[['sine','부드럽게'],['square','끊어서']]},
 };
 const LAYER_SECTIONS = [
-  {t:'소리', items:['src','wave','noise','voices','detune','width','ratio','index','indexEnd','density']},
-  {t:'높이', items:['f0','f1','glide','pcurve','vibRate','vibDepth'], when:l=>l.src!=='noise'},
+  {t:'소리', items:['src','sample','sStart','sEnd','reverse','wave','noise','voices','detune','width','ratio','index','indexEnd','density']},
+  {t:'높이', items:['f0','f1','rate0','rate1','glide','pcurve','vibRate','vibDepth'], when:l=>l.src!=='noise'},
   {t:'모양', items:['delay','attack','hold','decay','dcurve','gain']},
   {t:'필터', items:['filter','cut0','cut1','sweep','q']},
   {t:'질감', items:['drive','pulseDepth','pulseRate','pulseShape','pan']},
 ];
+const synth = (l) => l.src==='tone' || l.src==='fm';
 const VIS = {
-  wave:l=>l.src!=='noise', noise:l=>l.src==='noise', voices:l=>l.src!=='noise', detune:l=>l.src!=='noise',
+  wave:synth, noise:l=>l.src==='noise', voices:synth, detune:synth, width:l=>l.src!=='sample',
+  f0:l=>l.src!=='sample', f1:l=>l.src!=='sample', rate0:l=>l.src==='sample', rate1:l=>l.src==='sample',
+  hold:l=>l.src!=='sample', sample:l=>l.src==='sample', reverse:l=>l.src==='sample',
+  sStart:l=>l.src==='sample' && !!SAMPLES[l.sample], sEnd:l=>l.src==='sample' && !!SAMPLES[l.sample],
   ratio:l=>l.src==='fm', index:l=>l.src==='fm', indexEnd:l=>l.src==='fm',
   density:l=>l.src==='noise' && l.noise==='crackle',
   cut0:l=>l.filter!=='none', cut1:l=>l.filter!=='none', sweep:l=>l.filter!=='none', q:l=>l.filter!=='none',
+};
+// 녹음 층에서는 몇몇 값의 뜻이 조금 다르다
+const OVR = {
+  attack:{tip:'처음에서 이만큼 동안 소리가 커진다. 녹음의 시작을 부드럽게 한다'},
+  decay:{t:'끝 줄임', tip:'끝에서 이만큼 동안 소리가 줄어든다'},
+  glide:{tip:'시작 빠르기에서 끝 빠르기까지 가는 데 걸리는 시간'},
 };
 const MASTER_SECTIONS = [
   {t:'공간', items:['revMix','revSize','revDamp','dlyMix','dlyTime','dlyFb']},
@@ -298,6 +321,7 @@ function fmt(d,v){
     case 'x': return v.toFixed(2)+'×';
     case 'i': return String(Math.round(v));
     case 'n': return v.toFixed(2);
+    case 'rate': { const st = 12*Math.log2(v); return (Math.abs(st)<0.05 ? '0' : (st>0?'+':'')+st.toFixed(1))+' 반음'; }
     case '%': return Math.round(v*100)+'%';
     case 'pan': return Math.abs(v)<0.02 ? '가운데' : (v<0?'왼 ':'오른 ')+Math.round(Math.abs(v)*100)+'%';
     default: return (v>0?'+':'')+v.toFixed(2);
@@ -451,7 +475,20 @@ const PRESETS = {
 
 // ---------- 합성 ----------
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
-const layerLen = (l) => l.attack + l.hold + l.decay;
+const layerLen = (l) => l.src==='sample' ? playLen(l) : l.attack + l.hold + l.decay;
+// 엔벨로프. 녹음 층은 길이가 녹음으로 정해지고, 올라옴은 처음에, 사라짐(끝 줄임)은 끝에 건다
+function envAt(l, t, dur){
+  if (l.src === 'sample'){
+    let a = l.attack, d = l.decay; const s = a+d;
+    if (s > dur){ a *= dur/s; d *= dur/s; }
+    if (t < a) return 1-Math.pow(1-t/a, 2);
+    if (t > dur-d) return decayShape((t-(dur-d))/d, l.dcurve);
+    return 1;
+  }
+  if (t < l.attack) return 1-Math.pow(1-t/l.attack, 2);
+  if (t < l.attack+l.hold) return 1;
+  return decayShape((t-l.attack-l.hold)/l.decay, l.dcurve);
+}
 const glideShape = (x,c) => c>=0 ? 1-Math.pow(1-x,1+4*c) : Math.pow(x,1-4*c);
 const decayShape = (x,c) => x>=1 ? 0 : (c>=0 ? Math.pow(1-x,1+5*c) : 1-Math.pow(x,1-5*c));
 const clampF = (f) => clamp(f, 1, 22000);
@@ -477,7 +514,7 @@ function varied(snd, seed, amount){
   const time = 1 + rr()*amount*0.25;
   for (const l of s.layers){
     const lp = pitch*Math.pow(2, rr()*amount*0.5/12);
-    l.f0 *= lp; l.f1 *= lp;
+    l.f0 *= lp; l.f1 *= lp; l.rate0 *= lp; l.rate1 *= lp;
     l.decay *= time*(1+rr()*amount*0.1);
     l.hold *= time;
     const fc = Math.pow(2, rr()*amount*0.6);
@@ -560,13 +597,7 @@ function buildLayer(ctx, l, dest, seed){
   if (l.drive > 0.001){ const sh = makeShaper(ctx, l.drive); node.connect(sh); node = sh; }
 
   const amp = ctx.createGain(); amp.gain.value = 0;
-  const env = curveOver(N, dur, (t) => {
-    let v;
-    if (t < l.attack) v = 1-Math.pow(1-t/l.attack, 2);
-    else if (t < l.attack+l.hold) v = 1;
-    else v = decayShape((t-l.attack-l.hold)/l.decay, l.dcurve);
-    return v*l.gain;
-  });
+  const env = curveOver(N, dur, (t) => envAt(l, t, dur)*l.gain);
   env[N-1] = 0;
   amp.gain.setValueCurveAtTime(env, t0, dur);
   node.connect(amp);
@@ -598,6 +629,20 @@ function buildLayer(ctx, l, dest, seed){
     const lfo = ctx.createOscillator(); lfo.frequency.value = l.vibRate;
     vib = ctx.createGain(); vib.gain.value = l.vibDepth;
     lfo.connect(vib); lfo.start(t0); lfo.stop(t1+0.01);
+  }
+  if (l.src === 'sample'){
+    const g = segOf(l); if (!g) return;
+    const nch = g.s.ch.length, n = g.b-g.a, b = ctx.createBuffer(nch, n, SR);
+    for (let c=0; c<nch; c++){
+      const src = g.s.ch[c].subarray(g.a, g.b), dst = b.getChannelData(c);
+      if (l.reverse){ for (let i=0;i<n;i++) dst[i] = src[n-1-i]; } else dst.set(src);
+    }
+    const sn = ctx.createBufferSource(); sn.buffer = b;
+    const rc = curveOver(N, dur, (t) => clamp(rateAt(l, t), 0.05, 16));
+    sn.playbackRate.value = rc[0]; sn.playbackRate.setValueCurveAtTime(rc, t0, dur);
+    if (vib) vib.connect(sn.detune);
+    sn.connect(mix); sn.start(t0); sn.stop(t1+0.01);
+    return;
   }
   const V = Math.max(1, Math.round(l.voices));
   for (let v=0; v<V; v++){
@@ -683,6 +728,171 @@ function finish(buf, peakDb){
   for (let i=0;i<end;i++){ const f = i > end-fade ? (end-i)/fade : 1; oL[i]=L[i]*g*f; oR[i]=R[i]*g*f; }
   return {L:oL, R:oR, dur:end/SR};
 }
+
+// ---------- 녹음 (층에 넣는 소리 파일) ----------
+// 녹음은 48kHz로 바꾸고 최대 20초까지 쓴다. 설정값보다 훨씬 커서 브라우저의 IndexedDB에 따로 저장한다.
+const SAMPLES = {};
+const MAX_SAMPLE_SEC = 20;
+const smpList = () => Object.values(SAMPLES).sort((a,b) => a.t - b.t);
+function sampleMeta(id, name, ch, t){
+  const len = ch[0].length;
+  let pk = 1e-9;
+  for (const c of ch) for (let i=0;i<len;i++){ const a = Math.abs(c[i]); if (a > pk) pk = a; }
+  const loud = (i) => ch.some(c => Math.abs(c[i]) > pk*0.03), heard = (i) => ch.some(c => Math.abs(c[i]) > pk*0.003);
+  let on = 0; while (on < len-1 && !loud(on)) on++;
+  let off = len-1; while (off > on && !heard(off)) off--;
+  // onset/offset: 앞뒤의 조용한 부분을 뺀 구간. 녹음을 고르면 여기로 자른다
+  return {id, name, ch, len, t: t || Date.now(), dur: len/SR,
+    onset: Math.max(0, on - 0.005*SR)/SR, offset: Math.min(len, off + 0.02*SR)/SR};
+}
+function segOf(l){
+  const s = SAMPLES[l.sample]; if (!s) return null;
+  const a = clamp(Math.round(l.sStart*SR), 0, s.len-1);
+  const b = clamp(l.sEnd > l.sStart ? Math.round(l.sEnd*SR) : s.len, a+1, s.len);
+  return {s, a, b};
+}
+const rateAt = (l, t) => l.rate0*Math.pow(l.rate1/l.rate0, glideShape(Math.min(1, t/Math.max(0.001, l.glide)), l.pcurve));
+// 녹음 구간을 빠르기 곡선대로 다 재생하는 데 걸리는 시간
+function playLen(l){
+  const g = segOf(l); if (!g) return 0.05;
+  const S = (g.b-g.a)/SR, dt = 0.001;
+  let pos = 0, t = 0;
+  while (pos < S && t < 30){ pos += rateAt(l, t)*dt; t += dt; }
+  return Math.max(0.005, t);
+}
+
+let dbp = null;
+function db(){
+  return dbp ??= new Promise((res, rej) => {
+    const r = indexedDB.open('sfxbench', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('samples', {keyPath:'id'});
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idbAll(){ const d = await db(); return new Promise((res, rej) => { const q = d.transaction('samples').objectStore('samples').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+async function idbTx(fn){ const d = await db(); return new Promise((res, rej) => { const tx = d.transaction('samples', 'readwrite'); fn(tx.objectStore('samples')); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+const f2i = (c) => { const o = new Int16Array(c.length); for (let i=0;i<c.length;i++) o[i] = Math.max(-32768, Math.min(32767, Math.round(c[i]*32767))); return o; };
+const i2f = (c) => { const o = new Float32Array(c.length); for (let i=0;i<c.length;i++) o[i] = c[i]/32768; return o; };
+let warnedDB = false;
+async function storeSample(s){
+  try {
+    await idbTx((st) => st.put({id:s.id, name:s.name, t:s.t, ch:s.ch.map(f2i)}));
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
+  } catch(e){
+    if (!warnedDB){ warnedDB = true; status('이 브라우저에는 녹음을 저장하지 못한다. 열려 있는 동안만 쓴다', true); }
+  }
+}
+async function addSampleFromAudio(ab, name){
+  const buf = await new OfflineAudioContext(1, 1, SR).decodeAudioData(ab);
+  const n = Math.min(buf.length, MAX_SAMPLE_SEC*SR), ch = [];
+  for (let c=0; c<Math.min(2, buf.numberOfChannels); c++) ch.push(buf.getChannelData(c).slice(0, n));
+  let pk = 1e-9;
+  for (const c of ch) for (let i=0;i<n;i++) pk = Math.max(pk, Math.abs(c[i]));
+  if (pk < 1e-4) throw new Error('silent');
+  const g = 0.9/pk;   // 녹음마다 크기가 달라서 맞춘다
+  for (const c of ch) for (let i=0;i<n;i++) c[i] *= g;
+  const s = sampleMeta('s'+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36), name, ch);
+  SAMPLES[s.id] = s;
+  await storeSample(s);
+  if (buf.length > n) status(`앞의 ${MAX_SAMPLE_SEC}초만 썼다`);
+  return s.id;
+}
+function useSample(l, id){
+  pushHistory();
+  const s = SAMPLES[id];
+  l.sample = id; l.sStart = s ? +s.onset.toFixed(4) : 0; l.sEnd = s ? +s.offset.toFixed(4) : 0;
+  buildEditor(); changed(true);
+}
+function nextName(base){
+  const names = new Set(smpList().map(s => s.name));
+  let k = 1; while (names.has(`${base} ${k}`)) k++;
+  return `${base} ${k}`;
+}
+async function deleteSample(s){
+  const users = Object.keys(lib).filter(n => lib[n].layers.some(l => l.sample === s.id));
+  if (!confirm(`"${s.name}" 녹음을 지울까요? 되돌릴 수 없어요.` + (users.length ? `\n이 녹음을 쓰는 소리: ${users.join(', ')} (그 층은 소리가 안 나게 돼요)` : ''))) return;
+  delete SAMPLES[s.id];
+  try { await idbTx((st) => st.delete(s.id)); } catch(e){}
+  buildEditor(); changed(true);
+}
+
+let rec = null;
+async function toggleRecord(l, btn){
+  if (rec){ if (rec.state === 'recording') rec.stop(); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder){ status('이 브라우저는 녹음을 못 한다'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}}); }
+  catch(e){ status(e.name === 'NotAllowedError' ? '마이크 권한이 없다' : '마이크를 쓸 수 없다 (https 주소나 설치한 앱에서 된다)'); return; }
+  const mr = new MediaRecorder(stream), chunks = [], t0 = Date.now();
+  rec = mr; btn.classList.add('on');
+  const timer = setInterval(() => {
+    const sec = (Date.now()-t0)/1000;
+    btn.textContent = `■ 멈춤 ${sec.toFixed(1)}초`;
+    if (sec >= MAX_SAMPLE_SEC && mr.state === 'recording') mr.stop();
+  }, 100);
+  mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  mr.onstop = async () => {
+    clearInterval(timer); stream.getTracks().forEach(t => t.stop()); rec = null;
+    try { const id = await addSampleFromAudio(await new Blob(chunks).arrayBuffer(), nextName('녹음')); useSample(l, id); status('녹음했다'); }
+    catch(e){ status(e.message === 'silent' ? '소리가 녹음되지 않았다' : '녹음을 읽지 못했다'); buildEditor(); }
+  };
+  mr.start(100);
+  btn.textContent = '■ 멈춤 0.0초';
+}
+let importTarget = null;
+$('#fSample').onchange = async (e) => {
+  const f = e.target.files[0], l = importTarget; e.target.value = ''; importTarget = null;
+  if (!f || !l) return;
+  status('불러오는 중…', true);
+  try { const id = await addSampleFromAudio(await f.arrayBuffer(), f.name.replace(/\.[^.]+$/, '') || nextName('파일')); useSample(l, id); status('불러왔다'); }
+  catch(err){ status(err.message === 'silent' ? '소리가 없는 파일이다' : '이 파일은 읽지 못했다'); }
+};
+function drawSample(cv, l, color){
+  const s = SAMPLES[l.sample], dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return;
+  cv.width = W*dpr; cv.height = H*dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0,0,W,H);
+  if (!s){ g.fillStyle = '#5d667a'; g.font = '12px system-ui'; g.fillText('녹음을 고르거나 새로 녹음한다', 8, H/2+4); return; }
+  const a = l.sStart/s.dur*W, b = (l.sEnd > l.sStart ? l.sEnd : s.dur)/s.dur*W;
+  g.fillStyle = '#ffffff0d'; g.fillRect(a, 0, b-a, H);
+  const c = s.ch[0], n = s.len, mid = H/2;
+  for (let x=0; x<W; x++){
+    const i0 = Math.floor(x/W*n), i1 = Math.max(i0+1, Math.floor((x+1)/W*n));
+    let mx = 0; for (let i=i0; i<i1 && i<n; i++){ const v = Math.abs(c[i]); if (v > mx) mx = v; }
+    g.fillStyle = x >= a && x <= b ? color : '#3a4152';
+    g.fillRect(x, mid - mx*mid*0.95, 1, Math.max(1, mx*mid*1.9));
+  }
+  if (l.reverse){ g.fillStyle = '#dde3ee'; g.font = '11px system-ui'; g.fillText('◀ 거꾸로', 6, 13); }
+}
+function samplePicker(l, color){
+  const s = SAMPLES[l.sample], list = smpList();
+  const sel = h('select', {}, h('option', {value:''}, list.length ? '— 녹음을 고른다 —' : '— 아직 녹음이 없다 —'),
+    list.map(x => h('option', {value:x.id, selected: x.id === l.sample}, `${x.name} (${x.dur.toFixed(1)}초)`)));
+  if (l.sample && !s) sel.append(h('option', {value:l.sample, selected:true}, '(지워진 녹음)'));
+  sel.addEventListener('change', () => {
+    if (sel.value && SAMPLES[sel.value]) useSample(l, sel.value);
+    else { pushHistory(); l.sample = ''; buildEditor(); changed(true); }
+  });
+  const cv = h('canvas', {class:'smp'});
+  const draw = () => drawSample(cv, l, color);
+  requestAnimationFrame(draw);
+  const el = h('div', {class:'smpbox'},
+    h('div', {class:'p'}, label({t:'녹음', tip:'이 층에서 쓸 녹음. ● 녹음은 마이크로, 파일 불러오기는 WAV·MP3 같은 소리 파일로 넣는다'}), sel),
+    h('div', {class:'smpbtns'},
+      h('button', {class:'btn small'+(rec?' on':''), onclick:(e) => toggleRecord(l, e.currentTarget)}, rec ? '■ 멈춤' : '● 녹음'),
+      h('button', {class:'btn small', onclick:() => { importTarget = l; $('#fSample').click(); }}, '파일 불러오기'),
+      h('button', {class:'btn small', disabled:!s, onclick:() => { const n = (prompt('녹음 이름', s.name) || '').trim(); if (!n) return; s.name = n; storeSample(s); buildEditor(); }}, '이름'),
+      h('button', {class:'btn small', disabled:!s, onclick:() => deleteSample(s)}, '지우기')),
+    cv);
+  return {el, draw};
+}
+function checkRow(obj, key, text, after){
+  const c = h('input', {type:'checkbox'}); c.checked = obj[key];
+  c.addEventListener('change', () => { pushHistory(); obj[key] = c.checked; after && after(); changed(true); });
+  return h('label', {class:'p chkrow'}, h('span', {class:'pl'}, text), h('span', {}, c));
+}
+const i16ToB64 = (a) => { const u8 = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i=0;i<u8.length;i+=0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i+0x8000)); return btoa(s); };
+const b64ToI16 = (b) => { const s = atob(b); const u8 = new Uint8Array(s.length & ~1); for (let i=0;i<u8.length;i++) u8[i] = s.charCodeAt(i); return new Int16Array(u8.buffer); };
 
 // ---------- 파일 ----------
 const s16 = (x) => Math.max(-32768, Math.min(32767, Math.round(x*32767)));
@@ -813,8 +1023,18 @@ function slider(obj, key, d, after){
 const label = (d) => h('span', {class:'pl', onclick:() => status(d.tip ? `${d.t}: ${d.tip}` : d.t)}, d.t);
 function select(obj, key, d){
   const s = h('select', {}, d.opts.map(([v,t]) => h('option', {value:v, selected: obj[key]===v}, t)));
-  s.addEventListener('change', () => { pushHistory(); obj[key] = s.value; buildEditor(); changed(true); });
+  s.addEventListener('change', () => {
+    pushHistory(); obj[key] = s.value;
+    if (key === 'src' && s.value === 'sample') prepSampleLayer(obj);
+    buildEditor(); changed(true);
+  });
   return h('div', {class:'p'}, label(d), s);
+}
+// 녹음 층으로 바꿀 때: 짧은 페이드로 두고, 고른 녹음이 없으면 가장 최근 녹음을 쓴다
+function prepSampleLayer(l){
+  l.attack = 0.002; l.decay = Math.min(l.decay, 0.05); l.dcurve = 0;
+  const last = smpList().pop();
+  if (!SAMPLES[l.sample] && last){ l.sample = last.id; l.sStart = +last.onset.toFixed(4); l.sEnd = +last.offset.toFixed(4); }
 }
 // 층 카드를 접어 둔 상태. 휴대폰에서는 처음에 첫 층만 펼친다
 const COARSE = matchMedia('(pointer: coarse)').matches;
@@ -843,12 +1063,19 @@ function layerCard(l, i){
     h('button', {class:'btn small', title:'지우기', disabled: s.layers.length<=1, onclick:() => { pushHistory(); s.layers.splice(i,1); buildEditor(); changed(true); }}, '✕'),
   );
   const body = h('div', {class:'lbody'});
+  let picker = null;
+  const redraw = () => { upd(); if (picker) picker.draw(); };
   for (const sec of LAYER_SECTIONS){
     if (sec.when && !sec.when(l)) continue;
     const box = h('div', {class:'sec'}, h('h4', {}, sec.t));
     for (const k of sec.items){
       if (VIS[k] && !VIS[k](l)) continue;
-      box.append(SEL[k] ? select(l, k, SEL[k]) : slider(l, k, PD[k], upd));
+      if (k === 'sample'){ picker = samplePicker(l, color); box.append(picker.el); continue; }
+      if (k === 'reverse'){ box.append(checkRow(l, 'reverse', '거꾸로 재생', redraw)); continue; }
+      let d = PD[k];
+      if (l.src === 'sample' && OVR[k]) d = {...d, ...OVR[k]};
+      if (k === 'sStart' || k === 'sEnd'){ const sm = SAMPLES[l.sample]; d = {...d, max: sm ? +sm.dur.toFixed(4) : 1}; }
+      box.append(SEL[k] ? select(l, k, SEL[k]) : slider(l, k, d, redraw));
     }
     body.append(box);
   }
@@ -864,7 +1091,7 @@ function buildEditor(){
   $('#bDel').disabled = !!PRESETS[cur];
   const root = $('#layers'); root.innerHTML = '';
   s.layers.forEach((l,i) => root.append(layerCard(l,i)));
-  $('#bAdd').disabled = s.layers.length >= 8;
+  $('#bAdd').disabled = $('#bAddS').disabled = s.layers.length >= 8;
   const m = $('#master'); m.innerHTML = '';
   const body = h('div', {class:'lbody'});
   for (const sec of MASTER_SECTIONS){
@@ -984,14 +1211,15 @@ function mutate(amt){
   pushHistory();
   const s = snd(), r = Math.random;
   for (const l of s.layers){
-    const same = l.f0 === l.f1, sameC = l.cut0 === l.cut1;
+    const same = l.f0 === l.f1, sameC = l.cut0 === l.cut1, sameR = l.rate0 === l.rate1;
     for (const k in PD){
-      if (k === 'voices') continue;
+      if (k === 'voices' || k === 'sStart' || k === 'sEnd') continue;
       const d = PD[k], w = k==='gain' ? 0.4 : (k==='delay'||k==='pan') ? 0.3 : 1;
       l[k] = fromPos(d, clamp(toPos(d, l[k]) + (r()*2-1)*amt*w, 0, 1));
     }
     if (same) l.f1 = l.f0;
     if (sameC) l.cut1 = l.cut0;
+    if (sameR) l.rate1 = l.rate0;
   }
   buildEditor(); changed(true);
 }
@@ -1014,6 +1242,14 @@ $('#bReset').onclick = () => { if (!PRESETS[cur]) return; pushHistory(); lib[cur
 $('#bAdd').onclick = () => {
   pushHistory(); const s = snd();
   s.layers.push(L({name:'', gain:0.5, decay:0.3}));
+  folded[cur+':'+(s.layers.length-1)] = false;
+  buildEditor(); changed(true);
+};
+$('#bAddS').onclick = () => {
+  const s = snd(); if (s.layers.length >= 8) return;
+  pushHistory();
+  const l = L({name:'녹음', src:'sample', gain:0.8}); prepSampleLayer(l);
+  s.layers.push(l); folded[cur+':'+(s.layers.length-1)] = false;
   buildEditor(); changed(true);
 };
 $('#bWav').onclick = async () => {
@@ -1038,7 +1274,8 @@ $('#bAll').onclick = async () => {
   status(`소리 ${names.length}개, WAV ${files.length}개 저장`);
 };
 $('#bSave').onclick = () => {
-  download(new Blob([JSON.stringify({app:'sfx-bench', version:1, lib, custom}, null, 1)], {type:'application/json'}), 'sfx_library.json');
+  const samples = smpList().map(s => ({id:s.id, name:s.name, t:s.t, ch:s.ch.map(c => i16ToB64(f2i(c)))}));
+  download(new Blob([JSON.stringify({app:'sfx-bench', version:2, lib, custom, samples}, null, 1)], {type:'application/json'}), 'sfx_library.json');
 };
 $('#bLoad').onclick = () => $('#fLoad').click();
 $('#fLoad').onchange = async (e) => {
@@ -1050,8 +1287,18 @@ $('#fLoad').onchange = async (e) => {
       lib[k] = s; n++;
       if (!PRESETS[k] && !custom.includes(k)) custom.push(k);
     }
+    let ns = 0;
+    for (const r of (Array.isArray(d.samples) ? d.samples : [])){
+      try {
+        if (!r || typeof r.id !== 'string' || SAMPLES[r.id] || !Array.isArray(r.ch) || !r.ch.length) continue;
+        const ch = r.ch.slice(0, 2).map(b => i2f(b64ToI16(b)));
+        if (!ch[0].length || ch.some(c => c.length !== ch[0].length)) continue;
+        const sm = sampleMeta(r.id, String(r.name || '녹음'), ch, r.t);
+        SAMPLES[sm.id] = sm; await storeSample(sm); ns++;
+      } catch(err){}
+    }
     save(); buildList(); buildEditor(); refresh(false);
-    status(`소리 ${n}개 불러옴`);
+    status(`소리 ${n}개${ns ? `, 녹음 ${ns}개` : ''} 불러옴`);
   } catch(err){ status('불러오지 못했다: JSON이 아니다'); }
 };
 $('#bNew').onclick = () => {
@@ -1104,7 +1351,13 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:'){
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
-load(); buildList(); buildEditor(); refresh(false);
+(async () => {
+  load();
+  try {
+    for (const r of await idbAll()) if (r && Array.isArray(r.ch) && r.ch.length){ const sm = sampleMeta(r.id, r.name, r.ch.map(i2f), r.t); SAMPLES[sm.id] = sm; }
+  } catch(e){}
+  buildList(); buildEditor(); refresh(false);
+})();
 </script>
 </body>
 </html>
