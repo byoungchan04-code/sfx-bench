@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>효과음 작업대</title>
+<!--
+  효과음 작업대. 브라우저로 열어서 쓴다. 인터넷 연결이 없어도 된다.
+  소리 하나 = 층(layer) 여러 개. 층마다 음원(톤/FM/노이즈), 높이, 모양(엔벨로프), 필터, 질감을 정한다.
+  전체에 울림(리버브), 메아리(딜레이), 압축을 걸고, 최대 음량에 맞춰 48kHz 16비트 스테레오 WAV로 내보낸다.
+  만든 값은 이 브라우저에 저장된다. 다른 컴퓨터로 옮기거나 저장소에 남기려면 "설정 저장"으로 JSON을 받아 둔다.
+-->
+<style>
+:root{
+  --bg:#0b0d12; --panel:#13161e; --panel2:#1a1f2a; --line:#252b39; --line2:#323a4d;
+  --text:#dde3ee; --dim:#8590a6; --accent:#7aa2ff; --mod:#ffcf6b; --warn:#ff7a7a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:13px/1.45 "Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  display:grid;grid-template-columns:210px 1fr;grid-template-rows:auto 1fr;height:100vh}
+header{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:9px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:14px;margin:0;font-weight:700;letter-spacing:.02em}
+header .keys{margin-left:auto;color:var(--dim);font-size:12px}
+aside{overflow:auto;border-right:1px solid var(--line);padding:6px 8px 30px;background:var(--panel)}
+main{overflow:auto;padding:14px 20px 80px}
+.grp{font-size:11px;color:var(--dim);margin:14px 8px 4px;letter-spacing:.04em}
+.cue{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;background:none;border:0;color:var(--text);
+  padding:4px 8px;border-radius:5px;cursor:pointer;font:12.5px/1.5 ui-monospace,Consolas,monospace}
+.cue:hover{background:var(--panel2)}
+.cue.cur{background:var(--accent);color:#0b0e14}
+.cue .mod{width:6px;height:6px;border-radius:50%}
+.cue.changed .mod{background:var(--mod)}
+.cue.cur.changed .mod{background:#0b0e14}
+.top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.top h2{margin:0;font:600 20px ui-monospace,Consolas,monospace}
+.hint{color:var(--dim);font-size:12px}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}
+.bar .sep{width:1px;height:22px;background:var(--line);margin:0 6px}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:5px 10px;border-radius:6px;cursor:pointer;font:inherit;white-space:nowrap}
+.btn:hover{border-color:var(--line2);background:#212736}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);color:#0b0e14;border-color:transparent;font-weight:700;padding:5px 16px}
+.btn.small{padding:2px 7px;font-size:12px}
+.btn.on{background:var(--mod);color:#0b0e14;border-color:transparent}
+label.chk{display:flex;gap:5px;align-items:center;color:var(--dim);cursor:pointer;user-select:none}
+.wavebox{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:8px;height:180px;margin:12px 0 6px;cursor:pointer}
+.wavebox canvas{width:100%;height:100%;display:block}
+#playhead{position:absolute;top:0;bottom:0;width:1px;background:#fff;opacity:0;pointer-events:none}
+.waveinfo{display:flex;justify-content:space-between;color:var(--dim);font-size:12px;margin-bottom:14px}
+.layer{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--lc);border-radius:8px;margin-bottom:12px}
+.layer.off .lbody{opacity:.4}
+.lhead{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line)}
+.lhead .lname{background:transparent;border:1px solid transparent;color:var(--text);font-family:inherit;font-weight:600;font-size:13px;padding:2px 6px;border-radius:4px;width:150px}
+.lhead .lname:hover,.lhead .lname:focus{border-color:var(--line2);outline:none}
+.lhead .llen{color:var(--dim);font-size:12px;margin-right:auto}
+.lbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px 24px;padding:8px 12px 10px}
+.sec h4{margin:6px 0 3px;font-size:11px;letter-spacing:.06em;color:var(--lc);font-weight:700}
+.p{display:grid;grid-template-columns:86px 1fr 70px;align-items:center;gap:8px;min-height:24px}
+.pl{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pv{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;cursor:text}
+.p input[type=range]{width:100%;margin:0;accent-color:var(--lc,var(--accent))}
+.p select{grid-column:2/4;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:3px 6px;font:inherit}
+.master{--lc:#b9c2d6}
+.addrow{display:flex;gap:8px;margin:4px 0 20px}
+#status{position:fixed;right:16px;bottom:14px;background:var(--panel2);border:1px solid var(--line2);padding:7px 12px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none}
+#status.show{opacity:1}
+.help{color:var(--dim);font-size:12px;max-width:900px;margin-top:18px;line-height:1.7}
+.help b{color:var(--text);font-weight:600}
+@media (max-width:760px){
+  body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}
+  header{grid-column:1}
+  header .keys{display:none}
+  aside{max-height:150px;border-right:0;border-bottom:1px solid var(--line)}
+  main{padding:12px 16px 60px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>효과음 작업대</h1>
+  <span class="hint">층을 쌓아 만드는 효과음 합성기</span>
+  <span class="keys">Space 듣기 · V 변주 듣기 · Ctrl+Z 되돌리기 · 숫자를 두 번 누르면 직접 입력</span>
+</header>
+<aside id="list"></aside>
+<main>
+  <div class="top">
+    <h2 id="cueName"></h2>
+    <span class="hint" id="cueHint"></span>
+  </div>
+  <div class="bar">
+    <button class="btn primary" id="bPlay" title="Space">▶ 듣기</button>
+    <button class="btn" id="bVar" title="V · 높이와 길이를 조금씩 흔든 버전">변주 듣기</button>
+    <span class="sep"></span>
+    <button class="btn" id="bMutS" title="모든 값을 조금씩 무작위로 바꾼다">살짝 바꾸기</button>
+    <button class="btn" id="bMutL" title="모든 값을 크게 무작위로 바꾼다">크게 바꾸기</button>
+    <button class="btn" id="bUndo" title="Ctrl+Z">되돌리기</button>
+    <button class="btn" id="bReset" title="이 소리를 처음 프리셋으로 돌린다">처음 값으로</button>
+    <span class="sep"></span>
+    <button class="btn" id="bWav">WAV 저장</button>
+    <button class="btn" id="bZip" title="변주 개수만큼 WAV를 만들어 zip 하나로 받는다">변주 묶음 저장</button>
+    <span class="sep"></span>
+    <label class="chk"><input type="checkbox" id="auto"> 바꾸면 바로 듣기</label>
+  </div>
+
+  <div class="wavebox" id="waveBox" title="누르면 듣기"><canvas id="wave"></canvas><div id="playhead"></div></div>
+  <div class="waveinfo"><span id="waveInfo"></span><span>아래 막대 = 층마다 소리가 나는 구간</span></div>
+
+  <div id="layers"></div>
+  <div class="addrow">
+    <button class="btn" id="bAdd">+ 층 추가</button>
+  </div>
+  <div id="master"></div>
+
+  <div class="bar" style="margin-top:20px">
+    <button class="btn" id="bNew" title="지금 소리를 복사해 새 이름으로 만든다">+ 새 소리 (지금 소리 복사)</button>
+    <button class="btn" id="bDel">이 소리 지우기</button>
+    <span class="sep"></span>
+    <button class="btn" id="bAll" title="목록의 모든 소리를 변주 개수만큼 WAV로 만들어 zip 하나로 받는다">전체 내보내기 (zip)</button>
+    <button class="btn" id="bSave" title="모든 소리의 값을 JSON 파일로 받는다">설정 저장</button>
+    <button class="btn" id="bLoad">설정 불러오기</button>
+    <input type="file" id="fLoad" accept=".json,application/json" hidden>
+  </div>
+
+  <div class="help">
+    <b>레트로 느낌을 덜어내는 법</b> — 소리 하나를 여러 층으로 쌓는다. 앞부분의 짧은 <b>타격</b>(노이즈를 아주 짧게), 가운데의 <b>몸통</b>(톤이나 FM), 끝에 남는 <b>꼬리</b>(울림·메아리)를 나눠 만든다.
+    사각파 하나만 쓰기보다 톱니파를 여러 겹 어긋나게 겹치고 필터로 고음을 깎으면 부드럽고 두꺼워진다. FM 배율을 1.41, 2.76처럼 정수가 아닌 값으로 두면 금속·종 소리가 된다.
+    <b>변주 묶음</b>으로 받은 WAV 여러 개를 Godot의 SoundCue <code>streams</code>에 함께 넣으면 부를 때마다 하나씩 골라 같은 소리가 덜 반복된다.
+    <br><b>음량</b> — "최대 음량"은 소리마다 다르게 잡혀 있다 (버튼 소리는 작게, 폭발은 크게). 세세한 균형은 사운드 보드의 volume_db로 맞춘다.
+  </div>
+</main>
+<div id="status"></div>
+
+<script>
+'use strict';
+const SR = 48000;
+const KEY = 'sfxbench.v1';
+const COLORS = ['#7aa2ff','#ff9f6b','#6fdc9c','#c58bff','#ffd36b','#6bd9ff','#ff7ab0','#a8e06b'];
+const $ = (s) => document.querySelector(s);
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+
+// ---------- 값 정의 ----------
+const LAYER_DEFAULT = {
+  name:'', on:true, solo:false,
+  src:'tone', wave:'sine', noise:'white', voices:1, detune:0, width:0,
+  ratio:2, index:2, indexEnd:0, density:0.4,
+  f0:440, f1:440, glide:0.2, pcurve:0, vibRate:5, vibDepth:0,
+  delay:0, attack:0.003, hold:0, decay:0.3, dcurve:0.5, gain:0.7,
+  filter:'none', cut0:2000, cut1:2000, sweep:0.2, q:1,
+  drive:0, pulseShape:'sine', pulseRate:8, pulseDepth:0, pan:0,
+};
+const MASTER_DEFAULT = {
+  revMix:0.15, revSize:1.0, revDamp:0.5, dlyMix:0, dlyTime:0.18, dlyFb:0.3,
+  lowcut:30, highcut:18000, mdrive:0, comp:0.3, peak:-1, vary:0.3, count:3,
+};
+
+// t 이름, sc 눈금(lin/log/pow), u 표시 단위, tip 설명
+const PD = {
+  voices:{t:'겹침',min:1,max:7,step:1,u:'i',tip:'같은 소리를 몇 겹 쌓을지. 살짝 어긋나게 쌓으면 두껍고 풍성해진다'},
+  detune:{t:'어긋남',min:0,max:60,sc:'pow',u:'c',tip:'겹친 소리끼리 높이를 얼마나 어긋나게 할지 (100센트 = 반음)'},
+  width:{t:'퍼짐',min:0,max:1,u:'%',tip:'좌우로 얼마나 넓게 퍼질지'},
+  ratio:{t:'FM 배율',min:0.25,max:8,sc:'log',u:'x',tip:'변조 높이 배율. 1, 2, 3 같은 정수면 맑은 소리, 1.41이나 2.76 같은 값이면 금속·종 소리'},
+  index:{t:'FM 처음',min:0,max:20,sc:'pow',u:'n',tip:'시작할 때 변조 세기. 클수록 날카롭고 복잡해진다'},
+  indexEnd:{t:'FM 끝',min:0,max:20,sc:'pow',u:'n',tip:'끝날 때 변조 세기. 처음보다 작으면 소리가 점점 둥글어진다'},
+  density:{t:'튀는 양',min:0,max:1,u:'%',tip:'지직 노이즈에서 불꽃이 얼마나 자주 튀는지'},
+  f0:{t:'시작 높이',min:20,max:12000,sc:'log',u:'Hz'},
+  f1:{t:'끝 높이',min:20,max:12000,sc:'log',u:'Hz'},
+  glide:{t:'바뀌는 시간',min:0.001,max:4,sc:'log',u:'s',tip:'시작 높이에서 끝 높이까지 가는 데 걸리는 시간'},
+  pcurve:{t:'바뀌는 곡선',min:-1,max:1,tip:'+ 쪽이면 처음에 확 바뀌고, - 쪽이면 천천히 시작해서 나중에 바뀐다'},
+  vibRate:{t:'떨림 빠르기',min:0.1,max:30,sc:'log',u:'Hz'},
+  vibDepth:{t:'떨림 깊이',min:0,max:1200,sc:'pow',u:'c',tip:'높이가 위아래로 흔들리는 폭. 크게 하면 사이렌이 된다'},
+  delay:{t:'시작 지연',min:0,max:3,sc:'pow',u:'s',tip:'이 층이 얼마나 늦게 시작할지'},
+  attack:{t:'올라옴',min:0.001,max:3,sc:'log',u:'s',tip:'최대 크기까지 커지는 시간. 짧으면 탁 치고, 길면 스르륵 올라온다'},
+  hold:{t:'유지',min:0,max:4,sc:'pow',u:'s',tip:'최대 크기로 버티는 시간'},
+  decay:{t:'사라짐',min:0.005,max:6,sc:'log',u:'s',tip:'최대 크기에서 0까지 줄어드는 시간'},
+  dcurve:{t:'사라짐 곡선',min:-1,max:1,tip:'+ 쪽이면 빨리 줄고 꼬리가 남는다 (타격음). - 쪽이면 버티다가 끝에 줄어든다'},
+  gain:{t:'음량',min:0,max:1,sc:'pow',u:'%',tip:'이 층의 크기. 다른 층과의 균형을 맞춘다'},
+  cut0:{t:'필터 처음',min:20,max:20000,sc:'log',u:'Hz'},
+  cut1:{t:'필터 끝',min:20,max:20000,sc:'log',u:'Hz'},
+  sweep:{t:'필터 시간',min:0.001,max:4,sc:'log',u:'s',tip:'필터가 처음 값에서 끝 값으로 가는 시간'},
+  q:{t:'공명',min:0.1,max:20,sc:'log',u:'n',tip:'필터 경계가 얼마나 울릴지. 높으면 "위잉" 하는 색이 생긴다'},
+  drive:{t:'찌그러짐',min:0,max:1,u:'%',tip:'소리를 눌러 찌그러뜨린다. 묵직함과 거친 맛이 생긴다'},
+  pulseRate:{t:'박동 빠르기',min:0.5,max:40,sc:'log',u:'Hz'},
+  pulseDepth:{t:'박동 깊이',min:0,max:1,u:'%',tip:'음량이 주기적으로 오르내리는 정도. 경보나 웅웅거림에 쓴다'},
+  pan:{t:'좌우',min:-1,max:1,u:'pan'},
+};
+const MD = {
+  revMix:{t:'울림 양',min:0,max:1,u:'%',tip:'공간 울림(리버브)을 얼마나 섞을지'},
+  revSize:{t:'울림 길이',min:0.1,max:6,sc:'log',u:'s',tip:'울림이 사라지는 데 걸리는 시간. 길면 넓은 공간'},
+  revDamp:{t:'울림 어둡기',min:0,max:1,u:'%',tip:'울림의 고음이 빨리 사라지는 정도. 높이면 먹먹하고 어두워진다'},
+  dlyMix:{t:'메아리 양',min:0,max:1,u:'%'},
+  dlyTime:{t:'메아리 간격',min:0.02,max:1,sc:'log',u:'s'},
+  dlyFb:{t:'메아리 반복',min:0,max:0.9,u:'%',tip:'메아리가 몇 번이나 되돌아올지'},
+  lowcut:{t:'저음 자르기',min:20,max:1000,sc:'log',u:'Hz'},
+  highcut:{t:'고음 자르기',min:1000,max:20000,sc:'log',u:'Hz'},
+  mdrive:{t:'전체 찌그러짐',min:0,max:1,u:'%'},
+  comp:{t:'압축',min:0,max:1,u:'%',tip:'큰 부분을 눌러 소리를 단단하고 꽉 차게 만든다'},
+  peak:{t:'최대 음량',min:-24,max:0,step:0.5,u:'dB',tip:'내보낼 때 가장 큰 지점을 이 크기에 맞춘다'},
+  vary:{t:'변주 폭',min:0,max:1,u:'%',tip:'변주 버전끼리 높이·길이·필터를 얼마나 다르게 할지'},
+  count:{t:'변주 개수',min:1,max:8,step:1,u:'i',tip:'변주 묶음 저장과 전체 내보내기에서 만들 WAV 개수'},
+};
+const SEL = {
+  src:{t:'종류',opts:[['tone','톤'],['fm','FM (금속·종)'],['noise','노이즈']]},
+  wave:{t:'파형',opts:[['sine','사인 (둥근)'],['triangle','삼각 (부드러운)'],['sawtooth','톱니 (밝은)'],['square','사각 (속 빈)']]},
+  noise:{t:'노이즈 색',opts:[['white','흰색 (쉭)'],['pink','분홍 (바람)'],['brown','갈색 (웅)'],['crackle','지직 (불꽃)']]},
+  filter:{t:'필터',opts:[['none','없음'],['lowpass','고음 깎기'],['highpass','저음 깎기'],['bandpass','가운데만']]},
+  pulseShape:{t:'박동 모양',opts:[['sine','부드럽게'],['square','끊어서']]},
+};
+const LAYER_SECTIONS = [
+  {t:'소리', items:['src','wave','noise','voices','detune','width','ratio','index','indexEnd','density']},
+  {t:'높이', items:['f0','f1','glide','pcurve','vibRate','vibDepth'], when:l=>l.src!=='noise'},
+  {t:'모양', items:['delay','attack','hold','decay','dcurve','gain']},
+  {t:'필터', items:['filter','cut0','cut1','sweep','q']},
+  {t:'질감', items:['drive','pulseDepth','pulseRate','pulseShape','pan']},
+];
+const VIS = {
+  wave:l=>l.src!=='noise', noise:l=>l.src==='noise', voices:l=>l.src!=='noise', detune:l=>l.src!=='noise',
+  ratio:l=>l.src==='fm', index:l=>l.src==='fm', indexEnd:l=>l.src==='fm',
+  density:l=>l.src==='noise' && l.noise==='crackle',
+  cut0:l=>l.filter!=='none', cut1:l=>l.filter!=='none', sweep:l=>l.filter!=='none', q:l=>l.filter!=='none',
+};
+const MASTER_SECTIONS = [
+  {t:'공간', items:['revMix','revSize','revDamp','dlyMix','dlyTime','dlyFb']},
+  {t:'마무리', items:['lowcut','highcut','mdrive','comp','peak']},
+  {t:'변주', items:['vary','count']},
+];
+
+function toPos(d,v){
+  v = clamp(v, d.min, d.max);
+  if (d.sc==='log') return Math.log(v/d.min)/Math.log(d.max/d.min);
+  if (d.sc==='pow') return Math.sqrt((v-d.min)/(d.max-d.min));
+  return (v-d.min)/(d.max-d.min);
+}
+function fromPos(d,p){
+  let v;
+  if (d.sc==='log') v = d.min*Math.pow(d.max/d.min, p);
+  else if (d.sc==='pow') v = d.min+(d.max-d.min)*p*p;
+  else v = d.min+(d.max-d.min)*p;
+  if (d.step) v = Math.round(v/d.step)*d.step;
+  return +clamp(v, d.min, d.max).toPrecision(5);
+}
+function fmt(d,v){
+  switch(d.u){
+    case 'Hz': return v>=1000 ? (v/1000).toFixed(v>=10000?1:2)+' kHz' : (v>=100?Math.round(v):v.toFixed(1))+' Hz';
+    case 's': return v<1 ? (v<0.01? (v*1000).toFixed(1) : Math.round(v*1000))+' ms' : v.toFixed(2)+' s';
+    case 'c': return Math.round(v)+' 센트';
+    case 'dB': return v.toFixed(1)+' dB';
+    case 'x': return v.toFixed(2)+'×';
+    case 'i': return String(Math.round(v));
+    case 'n': return v.toFixed(2);
+    case '%': return Math.round(v*100)+'%';
+    case 'pan': return Math.abs(v)<0.02 ? '가운데' : (v<0?'왼 ':'오른 ')+Math.round(Math.abs(v)*100)+'%';
+    default: return (v>0?'+':'')+v.toFixed(2);
+  }
+}
+
+// ---------- 프리셋 (사운드 보드 sounds.tscn의 이름과 같다) ----------
+const L = (o) => Object.assign(structuredClone(LAYER_DEFAULT), o);
+const S = (layers, m) => ({layers, master:Object.assign(structuredClone(MASTER_DEFAULT), m||{})});
+const GROUPS = [
+  ['화면', ['click','select','ring_open','cancel','error']],
+  ['선원 전투', ['step','hit','crit','miss','ranged_shot','crew_down','foe_down','wreck']],
+  ['함선 전투', ['ship_fire','enemy_fire','ship_hit','ship_miss']],
+  ['알림', ['round_start','threat','my_turn','alarm','encounter','rival','story','lost']],
+  ['조립', ['build_place','build_remove']],
+];
+const PRESETS = {
+  click: S([
+    L({name:'유리 톡', src:'fm', f0:2400,f1:2100,glide:0.03, ratio:3.5,index:1.6,indexEnd:0, attack:0.001,decay:0.05,dcurve:0.8,gain:0.7}),
+    L({name:'끝 마찰', src:'noise', filter:'bandpass',cut0:7000,cut1:5000,sweep:0.02,q:2, attack:0.001,decay:0.015,dcurve:0.6,gain:0.35}),
+  ], {revMix:0.08,revSize:0.4,peak:-10,vary:0.25}),
+  select: S([
+    L({name:'몸통', voices:2,detune:8,width:0.4, f0:520,f1:780,glide:0.06,pcurve:0.5, attack:0.003,decay:0.18,dcurve:0.6,gain:0.7}),
+    L({name:'반짝', src:'fm', f0:1560,f1:1560, ratio:2,index:1.2,indexEnd:0, delay:0.02, attack:0.002,decay:0.12,dcurve:0.7,gain:0.3}),
+  ], {revMix:0.15,revSize:0.8,peak:-9}),
+  ring_open: S([
+    L({name:'바람', src:'noise',noise:'pink',width:0.6, filter:'bandpass',cut0:400,cut1:3500,sweep:0.25,q:2.5, attack:0.08,decay:0.22,dcurve:0.3,gain:0.6}),
+    L({name:'떠오름', voices:3,detune:12,width:0.7, f0:300,f1:600,glide:0.3,pcurve:-0.2, attack:0.05,decay:0.3,dcurve:0.4,gain:0.35}),
+  ], {revMix:0.25,revSize:1.2,peak:-9}),
+  cancel: S([
+    L({name:'내려감', wave:'triangle', f0:660,f1:330,glide:0.12,pcurve:0.3, attack:0.003,decay:0.16,dcurve:0.5,gain:0.6, filter:'lowpass',cut0:3000,cut1:1200,sweep:0.15,q:0.7}),
+    L({name:'톡', src:'noise', filter:'bandpass',cut0:1500,cut1:1500,q:1.5, attack:0.001,decay:0.04,gain:0.18}),
+  ], {revMix:0.1,revSize:0.6,peak:-10}),
+  error: S([
+    L({name:'웅웅', wave:'sawtooth',voices:3,detune:15,width:0.3, f0:140,f1:128,glide:0.25, attack:0.005,hold:0.08,decay:0.2,dcurve:0.2,gain:0.6, filter:'lowpass',cut0:1100,cut1:450,sweep:0.3,q:1.2, pulseShape:'square',pulseRate:13,pulseDepth:0.85}),
+    L({name:'쇳소리', src:'fm', f0:280,f1:270, ratio:1.41,index:3,indexEnd:0.8, attack:0.003,decay:0.22,dcurve:0.5,gain:0.3}),
+  ], {revMix:0.1,revSize:0.6,peak:-8}),
+
+  step: S([
+    L({name:'쿵', src:'noise',noise:'brown', filter:'lowpass',cut0:700,cut1:180,sweep:0.08,q:0.9, attack:0.002,decay:0.09,dcurve:0.7,gain:0.85}),
+    L({name:'철판 울림', src:'fm', f0:180,f1:170, ratio:2.76,index:2,indexEnd:0, attack:0.001,decay:0.12,dcurve:0.8,gain:0.3}),
+    L({name:'끌림', src:'noise', filter:'bandpass',cut0:3200,cut1:2500,q:1, delay:0.005, attack:0.003,decay:0.025,gain:0.2}),
+  ], {revMix:0.12,revSize:0.5,peak:-9,vary:0.5,count:4}),
+  hit: S([
+    L({name:'쿵', f0:170,f1:50,glide:0.12,pcurve:0.6, attack:0.001,decay:0.18,dcurve:0.5,gain:0.9,drive:0.3}),
+    L({name:'타격', src:'noise',noise:'pink', filter:'lowpass',cut0:5000,cut1:600,sweep:0.1,q:0.8, attack:0.001,decay:0.12,dcurve:0.7,gain:0.6}),
+    L({name:'파편', src:'noise',noise:'crackle',density:0.55,width:0.5, filter:'bandpass',cut0:2500,cut1:2500,q:0.8, attack:0.001,decay:0.09,gain:0.3}),
+  ], {revMix:0.1,revSize:0.6,comp:0.5,peak:-4,vary:0.4,count:4}),
+  crit: S([
+    L({name:'쿵', f0:200,f1:40,glide:0.2,pcurve:0.6, attack:0.001,decay:0.3,dcurve:0.5,gain:0.9,drive:0.45}),
+    L({name:'타격', src:'noise',noise:'pink',width:0.4, filter:'lowpass',cut0:7000,cut1:500,sweep:0.15,q:0.8, attack:0.001,decay:0.18,dcurve:0.6,gain:0.7}),
+    L({name:'파편', src:'noise',noise:'crackle',density:0.7,width:0.7, filter:'bandpass',cut0:3000,cut1:1800,sweep:0.3,q:0.7, attack:0.001,decay:0.25,gain:0.35}),
+    L({name:'쇠 울림', src:'fm', f0:1200,f1:1150, ratio:1.414,index:4,indexEnd:0, delay:0.005, attack:0.001,decay:0.6,dcurve:0.6,gain:0.25}),
+  ], {revMix:0.25,revSize:1.0,comp:0.55,peak:-2}),
+  miss: S([
+    L({name:'휙', src:'noise', width:0.3, filter:'bandpass',cut0:900,cut1:2600,sweep:0.14,q:3.5, attack:0.06,decay:0.12,dcurve:0.2,gain:0.7}),
+    L({name:'바람결', src:'noise',noise:'pink', filter:'lowpass',cut0:600,cut1:600,q:0.7, attack:0.05,decay:0.1,gain:0.3}),
+  ], {revMix:0.12,revSize:0.6,peak:-9,vary:0.4}),
+  ranged_shot: S([
+    L({name:'광선', wave:'sawtooth',voices:4,detune:25,width:0.5, f0:1800,f1:220,glide:0.15,pcurve:0.6, attack:0.001,decay:0.2,dcurve:0.5,gain:0.5, filter:'lowpass',cut0:7000,cut1:800,sweep:0.15,q:1.5, drive:0.3}),
+    L({name:'발사', src:'noise', filter:'bandpass',cut0:3500,cut1:1000,sweep:0.08,q:1, attack:0.001,decay:0.07,dcurve:0.6,gain:0.5}),
+    L({name:'반동', f0:140,f1:60,glide:0.08,pcurve:0.5, attack:0.001,decay:0.1,dcurve:0.5,gain:0.6}),
+  ], {revMix:0.2,revSize:1.0,dlyMix:0.12,dlyTime:0.09,dlyFb:0.25,peak:-4,vary:0.35}),
+  crew_down: S([
+    L({name:'꺼짐', wave:'sawtooth',voices:3,detune:10,width:0.4, f0:220,f1:90,glide:0.6,pcurve:-0.3, vibRate:6,vibDepth:20, attack:0.02,hold:0.1,decay:0.5,dcurve:0.3,gain:0.45, filter:'lowpass',cut0:1300,cut1:280,sweep:0.6,q:1}),
+    L({name:'쓰러짐', f0:90,f1:40,glide:0.2,pcurve:0.5, delay:0.28, attack:0.002,decay:0.3,dcurve:0.6,gain:0.7,drive:0.2}),
+    L({name:'먼지', src:'noise',noise:'brown', filter:'lowpass',cut0:500,cut1:200,sweep:0.2, delay:0.28, attack:0.003,decay:0.22,gain:0.4}),
+  ], {revMix:0.3,revSize:1.5,peak:-5}),
+  foe_down: S([
+    L({name:'무너짐', src:'fm', f0:400,f1:80,glide:0.5,pcurve:0.3, ratio:1.5,index:6,indexEnd:0, attack:0.002,decay:0.5,dcurve:0.4,gain:0.5,drive:0.3}),
+    L({name:'불꽃', src:'noise',noise:'crackle',density:0.6,width:0.7, filter:'bandpass',cut0:3000,cut1:2000,sweep:0.4,q:0.7, attack:0.002,decay:0.4,dcurve:0.3,gain:0.35}),
+    L({name:'쿵', f0:120,f1:40,glide:0.2,pcurve:0.5, attack:0.001,decay:0.3,dcurve:0.6,gain:0.6}),
+  ], {revMix:0.25,revSize:1.2,peak:-5}),
+  wreck: S([
+    L({name:'폭발', src:'noise',noise:'brown',width:0.5, filter:'lowpass',cut0:1800,cut1:150,sweep:1.2,q:0.8, attack:0.004,decay:1.4,dcurve:0.6,gain:0.9,drive:0.4}),
+    L({name:'저음', f0:75,f1:30,glide:0.6,pcurve:0.4, attack:0.002,decay:0.8,dcurve:0.5,gain:0.8,drive:0.3}),
+    L({name:'파편', src:'noise',noise:'crackle',density:0.4,width:0.8, filter:'bandpass',cut0:2200,cut1:1200,sweep:1,q:0.7, attack:0.01,decay:1.0,dcurve:0.2,gain:0.35}),
+    L({name:'쇠 비명', src:'fm', f0:220,f1:170,glide:0.9, ratio:2.7,index:5,indexEnd:0, delay:0.05, attack:0.02,decay:0.9,dcurve:0.3,gain:0.22}),
+  ], {revMix:0.35,revSize:2.0,comp:0.6,peak:-1}),
+
+  ship_fire: S([
+    L({name:'포성', f0:110,f1:35,glide:0.35,pcurve:0.6, attack:0.001,decay:0.5,dcurve:0.5,gain:0.9,drive:0.5}),
+    L({name:'폭풍', src:'noise',noise:'pink',width:0.4, filter:'lowpass',cut0:3500,cut1:300,sweep:0.4,q:0.8, attack:0.001,decay:0.6,dcurve:0.6,gain:0.7}),
+    L({name:'에너지', wave:'sawtooth',voices:3,detune:30,width:0.6, f0:600,f1:150,glide:0.2,pcurve:0.6, attack:0.001,decay:0.25,dcurve:0.5,gain:0.3, filter:'lowpass',cut0:2500,cut1:400,sweep:0.2,q:1.5}),
+  ], {revMix:0.3,revSize:2.0,dlyMix:0.12,dlyTime:0.25,dlyFb:0.3,comp:0.6,peak:-2}),
+  enemy_fire: S([
+    L({name:'포성', src:'fm', f0:300,f1:90,glide:0.3,pcurve:0.5, ratio:0.5,index:5,indexEnd:1, attack:0.001,decay:0.45,dcurve:0.5,gain:0.6,drive:0.3}),
+    L({name:'폭풍', src:'noise',noise:'pink', filter:'bandpass',cut0:1500,cut1:500,sweep:0.35,q:1, attack:0.002,decay:0.4,dcurve:0.5,gain:0.5}),
+  ], {revMix:0.4,revSize:2.2,highcut:7000,comp:0.4,peak:-4}),
+  ship_hit: S([
+    L({name:'충격', f0:85,f1:30,glide:0.4,pcurve:0.5, attack:0.001,decay:0.6,dcurve:0.5,gain:0.9,drive:0.5}),
+    L({name:'폭음', src:'noise',noise:'brown',width:0.4, filter:'lowpass',cut0:2500,cut1:200,sweep:0.6,q:0.8, attack:0.001,decay:0.8,dcurve:0.6,gain:0.8}),
+    L({name:'선체 울림', src:'fm', f0:170,f1:160, ratio:2.41,index:6,indexEnd:0, vibRate:3,vibDepth:15, attack:0.002,decay:1.2,dcurve:0.4,gain:0.28}),
+    L({name:'불꽃', src:'noise',noise:'crackle',density:0.5,width:0.8, filter:'bandpass',cut0:3500,cut1:2000,sweep:0.5,q:0.7, attack:0.002,decay:0.5,dcurve:0.3,gain:0.3}),
+  ], {revMix:0.3,revSize:1.8,comp:0.7,peak:-1}),
+  ship_miss: S([
+    L({name:'스쳐감', src:'noise',noise:'pink',width:0.8, filter:'bandpass',cut0:2000,cut1:300,sweep:0.6,q:3, attack:0.15,decay:0.5,dcurve:0.2,gain:0.55}),
+    L({name:'멀어짐', f0:180,f1:110,glide:0.6, attack:0.1,decay:0.4,dcurve:0.3,gain:0.3}),
+  ], {revMix:0.5,revSize:2.5,peak:-6}),
+
+  round_start: S([
+    L({name:'솟음', wave:'sawtooth',voices:5,detune:20,width:0.8, f0:110,f1:220,glide:0.6,pcurve:-0.3, attack:0.4,hold:0.1,decay:0.4,dcurve:0.3,gain:0.45, filter:'lowpass',cut0:300,cut1:3000,sweep:0.6,q:1.5}),
+    L({name:'종', src:'fm', f0:880,f1:880, ratio:3.5,index:2,indexEnd:0, delay:0.55, attack:0.001,decay:1.0,dcurve:0.6,gain:0.3}),
+  ], {revMix:0.4,revSize:2.5,peak:-4}),
+  threat: S([
+    L({name:'웅웅', wave:'sawtooth',voices:3,detune:8,width:0.5, f0:55,f1:55, attack:0.05,hold:0.4,decay:0.6,dcurve:0.3,gain:0.7, filter:'lowpass',cut0:200,cut1:700,sweep:0.8,q:2, drive:0.3, pulseRate:3,pulseDepth:0.7}),
+    L({name:'불안', f0:110,f1:104,glide:1, vibRate:4,vibDepth:30, attack:0.2,hold:0.3,decay:0.6,dcurve:0.3,gain:0.3}),
+  ], {revMix:0.3,revSize:1.5,peak:-4}),
+  my_turn: S([
+    L({name:'첫 음', src:'fm', f0:660,f1:660, ratio:3.5,index:1.5,indexEnd:0, attack:0.002,decay:0.5,dcurve:0.6,gain:0.5}),
+    L({name:'둘째 음', src:'fm', f0:990,f1:990, ratio:3.5,index:1.5,indexEnd:0, delay:0.12, attack:0.002,decay:0.7,dcurve:0.6,gain:0.5}),
+    L({name:'빛', f0:1980,f1:1980, delay:0.12, attack:0.002,decay:0.4,dcurve:0.6,gain:0.12}),
+  ], {revMix:0.35,revSize:1.6,dlyMix:0.15,dlyTime:0.2,dlyFb:0.3,peak:-6}),
+  alarm: S([
+    L({name:'사이렌', wave:'sawtooth',voices:3,detune:12,width:0.4, f0:700,f1:700, vibRate:2.5,vibDepth:300, attack:0.02,hold:1.0,decay:0.15,dcurve:0.2,gain:0.45, filter:'lowpass',cut0:2600,cut1:2600,q:1}),
+    L({name:'아래 음', wave:'square', f0:350,f1:350, vibRate:2.5,vibDepth:300, attack:0.02,hold:1.0,decay:0.15,dcurve:0.2,gain:0.2, filter:'lowpass',cut0:1500,cut1:1500,q:0.7}),
+  ], {revMix:0.25,revSize:1.2,dlyMix:0.15,dlyTime:0.2,dlyFb:0.3,peak:-5}),
+  encounter: S([
+    L({name:'빨려듦', src:'noise',noise:'pink',width:0.6, filter:'bandpass',cut0:600,cut1:2500,sweep:0.3,q:2, attack:0.28,decay:0.06,dcurve:0.5,gain:0.35}),
+    L({name:'낮은 음', src:'fm', f0:220,f1:220, ratio:1.5,index:3,indexEnd:0.5, delay:0.3, attack:0.005,decay:1.3,dcurve:0.4,gain:0.45}),
+    L({name:'불협 음', src:'fm', f0:311,f1:311, ratio:1.5,index:3,indexEnd:0.5, delay:0.34, attack:0.005,decay:1.3,dcurve:0.4,gain:0.35}),
+  ], {revMix:0.45,revSize:2.5,peak:-4}),
+  rival: S([
+    L({name:'금관', wave:'sawtooth',voices:4,detune:18,width:0.6, f0:73,f1:70,glide:0.8, attack:0.08,hold:0.4,decay:0.6,dcurve:0.3,gain:0.5, filter:'lowpass',cut0:300,cut1:1600,sweep:0.3,q:1.5, drive:0.4}),
+    L({name:'삼전음', wave:'sawtooth',voices:4,detune:18,width:0.6, f0:103.8,f1:99,glide:0.8, attack:0.08,hold:0.4,decay:0.6,dcurve:0.3,gain:0.35, filter:'lowpass',cut0:300,cut1:1600,sweep:0.3,q:1.5}),
+    L({name:'바닥', f0:36.7,f1:36.7, attack:0.05,hold:0.4,decay:0.6,dcurve:0.3,gain:0.5}),
+  ], {revMix:0.35,revSize:2.0,peak:-3}),
+  story: S([
+    L({name:'첫 음', voices:3,detune:6,width:0.8, f0:523,f1:523, vibRate:5,vibDepth:6, attack:0.02,decay:1.2,dcurve:0.5,gain:0.4}),
+    L({name:'둘째 음', src:'fm', f0:784,f1:784, ratio:2,index:1,indexEnd:0, delay:0.09, attack:0.005,decay:1.0,dcurve:0.5,gain:0.25}),
+    L({name:'셋째 음', f0:1046,f1:1046, delay:0.18, attack:0.005,decay:0.9,dcurve:0.5,gain:0.15}),
+  ], {revMix:0.5,revSize:3.0,dlyMix:0.2,dlyTime:0.25,dlyFb:0.35,peak:-7}),
+  lost: S([
+    L({name:'무너짐', wave:'sawtooth',voices:4,detune:15,width:0.6, f0:220,f1:110,glide:1.5,pcurve:-0.2, attack:0.1,hold:0.3,decay:1.6,dcurve:0.3,gain:0.45, filter:'lowpass',cut0:1500,cut1:250,sweep:1.8,q:1}),
+    L({name:'바닥', f0:110,f1:55,glide:1.5, attack:0.2,decay:1.8,dcurve:0.3,gain:0.5}),
+    L({name:'잔해', src:'noise',noise:'brown', filter:'lowpass',cut0:300,cut1:300,q:0.7, attack:0.5,decay:1.5,dcurve:0.3,gain:0.3}),
+  ], {revMix:0.5,revSize:3.0,peak:-3}),
+
+  build_place: S([
+    L({name:'쿵', src:'noise',noise:'brown', filter:'lowpass',cut0:1200,cut1:300,sweep:0.08,q:0.8, attack:0.001,decay:0.08,dcurve:0.6,gain:0.7}),
+    L({name:'쇠', src:'fm', f0:300,f1:290, ratio:2.76,index:3,indexEnd:0, attack:0.001,decay:0.2,dcurve:0.7,gain:0.35}),
+    L({name:'딸깍', src:'noise', filter:'bandpass',cut0:4000,cut1:4000,q:3, delay:0.06, attack:0.001,decay:0.02,gain:0.35}),
+    L({name:'무게', f0:140,f1:90,glide:0.08,pcurve:0.5, attack:0.001,decay:0.1,dcurve:0.6,gain:0.5}),
+  ], {revMix:0.12,revSize:0.6,peak:-7}),
+  build_remove: S([
+    L({name:'풀림', src:'noise', filter:'bandpass',cut0:3500,cut1:3500,q:3, attack:0.001,decay:0.02,gain:0.3}),
+    L({name:'쇠', src:'fm', f0:260,f1:200,glide:0.12, ratio:2.76,index:2,indexEnd:0, delay:0.04, attack:0.002,decay:0.15,dcurve:0.6,gain:0.35}),
+    L({name:'들림', src:'noise',noise:'pink', filter:'bandpass',cut0:600,cut1:1600,sweep:0.15,q:1.5, delay:0.04, attack:0.03,decay:0.1,dcurve:0.4,gain:0.3}),
+  ], {revMix:0.12,revSize:0.6,peak:-8}),
+};
+
+// ---------- 합성 ----------
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const layerLen = (l) => l.attack + l.hold + l.decay;
+const glideShape = (x,c) => c>=0 ? 1-Math.pow(1-x,1+4*c) : Math.pow(x,1-4*c);
+const decayShape = (x,c) => x>=1 ? 0 : (c>=0 ? Math.pow(1-x,1+5*c) : 1-Math.pow(x,1-5*c));
+const clampF = (f) => clamp(f, 1, 22000);
+
+function estimateLength(m, layers){
+  let end = 0;
+  for (const l of layers) end = Math.max(end, l.delay + layerLen(l));
+  let tail = 0;
+  if (m.revMix > 0.001) tail = Math.max(tail, m.revSize);
+  if (m.dlyMix > 0.001){
+    const fb = clamp(m.dlyFb, 0.01, 0.95);
+    tail = Math.max(tail, Math.min(4, m.dlyTime*Math.ceil(Math.log(0.001)/Math.log(fb))));
+  }
+  return Math.min(12, end + tail + 0.05);
+}
+
+// 변주: 높이, 길이, 필터, 음량을 seed에 따라 조금씩 흔든다
+function varied(snd, seed, amount){
+  const s = structuredClone(snd);
+  if (!amount) return s;
+  const r = mulberry32(seed*7919+13), rr = () => r()*2-1;
+  const pitch = Math.pow(2, rr()*amount*2/12);
+  const time = 1 + rr()*amount*0.25;
+  for (const l of s.layers){
+    const lp = pitch*Math.pow(2, rr()*amount*0.5/12);
+    l.f0 *= lp; l.f1 *= lp;
+    l.decay *= time*(1+rr()*amount*0.1);
+    l.hold *= time;
+    const fc = Math.pow(2, rr()*amount*0.6);
+    l.cut0 = clamp(l.cut0*fc, 20, 20000); l.cut1 = clamp(l.cut1*fc, 20, 20000);
+    l.gain *= 1 + rr()*amount*0.2;
+    l.delay *= 1 + rr()*amount*0.15;
+    l.index *= 1 + rr()*amount*0.3;
+  }
+  return s;
+}
+
+function makeShaper(ctx, amt){
+  const k = 1+amt*24, n = 2048, c = new Float32Array(n), nrm = Math.tanh(k);
+  for (let i=0;i<n;i++){ const x = i/(n-1)*2-1; c[i] = Math.tanh(k*x)/nrm; }
+  const s = ctx.createWaveShaper(); s.curve = c; s.oversample = '4x'; return s;
+}
+
+function makeNoise(ctx, l, dur, seed){
+  const n = Math.ceil((dur+0.02)*SR);
+  const gen = (r) => {
+    const a = new Float32Array(n);
+    let b0=0,b1=0,b2=0,last=0;
+    const p = l.density*l.density*0.03 + 0.0005;
+    for (let i=0;i<n;i++){
+      const w = r()*2-1; let v;
+      switch(l.noise){
+        case 'pink': b0=0.99765*b0+w*0.0990460; b1=0.96300*b1+w*0.2965164; b2=0.57000*b2+w*1.0526913; v=b0+b1+b2+w*0.1848; break;
+        case 'brown': last=(last+0.02*w)/1.02; v=last; break;
+        case 'crackle': if (r()<p) last = r()*2-1; else last *= 0.82; v=last; break;
+        default: v=w;
+      }
+      a[i]=v;
+    }
+    // 노이즈 색마다 크기가 달라서 맞춘다 (지직은 최대값, 나머지는 평균 크기)
+    let g;
+    if (l.noise==='crackle'){ let pk=1e-9; for (let i=0;i<n;i++) pk=Math.max(pk,Math.abs(a[i])); g=0.9/pk; }
+    else { let e=0; for (let i=0;i<n;i++) e+=a[i]*a[i]; g=0.3/Math.sqrt(e/n+1e-12); }
+    for (let i=0;i<n;i++) a[i]*=g;
+    return a;
+  };
+  const A = gen(mulberry32(seed)), B = gen(mulberry32(seed+999));
+  const b = ctx.createBuffer(2, n, SR), Lc = b.getChannelData(0), Rc = b.getChannelData(1);
+  const w = l.width, g = 1/Math.sqrt((1-w)*(1-w)+w*w);
+  for (let i=0;i<n;i++){ Lc[i]=A[i]; Rc[i]=(A[i]*(1-w)+B[i]*w)*g; }
+  return b;
+}
+
+function makeIR(ctx, size, damp){
+  const n = Math.max(1, Math.ceil(size*SR)), b = ctx.createBuffer(2, n, SR);
+  for (let ch=0; ch<2; ch++){
+    const r = mulberry32(4242+ch*101), d = b.getChannelData(ch);
+    let lp = 0;
+    for (let i=0;i<n;i++){
+      const t = i/SR, x = t/size;
+      const a = Math.min(0.97, damp*(0.1+0.85*x));
+      lp = lp*a + (r()*2-1)*(1-a);
+      const fadeIn = Math.min(1, i/(0.004*SR));
+      d[i] = lp*Math.exp(-6.9*x)*fadeIn;
+    }
+  }
+  return b;
+}
+
+function curveOver(N, dur, fn){ const c = new Float32Array(N); for (let i=0;i<N;i++) c[i] = fn(i/(N-1)*dur, i/(N-1)); return c; }
+
+function buildLayer(ctx, l, dest, seed){
+  const t0 = l.delay, dur = Math.max(0.002, layerLen(l)), t1 = t0+dur;
+  const N = Math.max(32, Math.min(8192, Math.ceil(dur*500)));
+
+  const mix = ctx.createGain();
+  let node = mix;
+  if (l.filter !== 'none'){
+    const f = ctx.createBiquadFilter(); f.type = l.filter;
+    f.Q.value = l.filter==='bandpass' ? l.q : 20*Math.log10(Math.max(l.q,0.1)/0.707);
+    const sw = Math.max(0.001, l.sweep);
+    const fc = curveOver(N, dur, (t) => clamp(l.cut0*Math.pow(l.cut1/l.cut0, Math.min(1,t/sw)), 20, 22000));
+    f.frequency.value = fc[0]; f.frequency.setValueCurveAtTime(fc, t0, dur);
+    node.connect(f); node = f;
+  }
+  if (l.drive > 0.001){ const sh = makeShaper(ctx, l.drive); node.connect(sh); node = sh; }
+
+  const amp = ctx.createGain(); amp.gain.value = 0;
+  const env = curveOver(N, dur, (t) => {
+    let v;
+    if (t < l.attack) v = 1-Math.pow(1-t/l.attack, 2);
+    else if (t < l.attack+l.hold) v = 1;
+    else v = decayShape((t-l.attack-l.hold)/l.decay, l.dcurve);
+    return v*l.gain;
+  });
+  env[N-1] = 0;
+  amp.gain.setValueCurveAtTime(env, t0, dur);
+  node.connect(amp);
+
+  let tail = amp;
+  if (l.pulseDepth > 0.01){
+    const pg = ctx.createGain(); pg.gain.value = 1-l.pulseDepth/2;
+    const lfo = ctx.createOscillator();
+    if (l.pulseShape==='square') lfo.type = 'square';
+    else lfo.setPeriodicWave(ctx.createPeriodicWave(new Float32Array([0,1]), new Float32Array([0,0]))); // 코사인: 가장 큰 곳에서 시작
+    lfo.frequency.value = l.pulseRate;
+    const lg = ctx.createGain(); lg.gain.value = l.pulseDepth/2;
+    lfo.connect(lg); lg.connect(pg.gain); lfo.start(t0); lfo.stop(t1+0.01);
+    amp.connect(pg); tail = pg;
+  }
+  const lpan = ctx.createStereoPanner(); lpan.pan.value = l.pan;
+  tail.connect(lpan); lpan.connect(dest);
+
+  if (l.src === 'noise'){
+    const s = ctx.createBufferSource(); s.buffer = makeNoise(ctx, l, dur, seed);
+    s.connect(mix); s.start(t0); s.stop(t1+0.01);
+    return;
+  }
+
+  const gl = Math.max(0.001, l.glide);
+  const fr = curveOver(N, dur, (t) => clampF(l.f0*Math.pow(l.f1/l.f0, glideShape(Math.min(1,t/gl), l.pcurve))));
+  let vib = null;
+  if (l.vibDepth > 0.5){
+    const lfo = ctx.createOscillator(); lfo.frequency.value = l.vibRate;
+    vib = ctx.createGain(); vib.gain.value = l.vibDepth;
+    lfo.connect(vib); lfo.start(t0); lfo.stop(t1+0.01);
+  }
+  const V = Math.max(1, Math.round(l.voices));
+  for (let v=0; v<V; v++){
+    const pos = V===1 ? 0 : (v/(V-1))*2-1;
+    const det = pos*l.detune;
+    const pan = ctx.createStereoPanner(); pan.pan.value = clamp(pos*l.width, -1, 1);
+    const vg = ctx.createGain(); vg.gain.value = 1/Math.sqrt(V);
+    const car = ctx.createOscillator(); car.type = l.wave; car.detune.value = det;
+    car.frequency.value = fr[0]; car.frequency.setValueCurveAtTime(fr, t0, dur);
+    if (vib) vib.connect(car.detune);
+    if (l.src === 'fm'){
+      const mod = ctx.createOscillator(); mod.detune.value = det;
+      const mf = new Float32Array(N), md = new Float32Array(N);
+      for (let i=0;i<N;i++){
+        const x = i/(N-1);
+        mf[i] = clampF(fr[i]*l.ratio);
+        const idx = l.index + (l.indexEnd-l.index)*(1-Math.pow(1-x,3));
+        md[i] = idx*fr[i]*l.ratio;
+      }
+      mod.frequency.value = mf[0]; mod.frequency.setValueCurveAtTime(mf, t0, dur);
+      const mg = ctx.createGain(); mg.gain.value = md[0]; mg.gain.setValueCurveAtTime(md, t0, dur);
+      if (vib) vib.connect(mod.detune);
+      mod.connect(mg); mg.connect(car.frequency); mod.start(t0); mod.stop(t1+0.01);
+    }
+    car.connect(vg); vg.connect(pan); pan.connect(mix);
+    car.start(t0); car.stop(t1+0.01);
+  }
+}
+
+// 소리 하나를 그린다. 결과는 {L, R, dur} (최대 음량에 맞추고 끝의 무음은 잘라 낸 것)
+async function renderSound(snd, {seed=1, vary=0, solo=false} = {}){
+  const s = varied(snd, seed, vary), m = s.master;
+  let layers = s.layers.filter(l => l.on);
+  if (solo){ const sl = layers.filter(l => l.solo); if (sl.length) layers = sl; }
+  const len = estimateLength(m, layers);
+  const ctx = new OfflineAudioContext(2, Math.max(128, Math.ceil(len*SR)), SR);
+
+  const bus = ctx.createGain();
+  const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=m.lowcut; hp.Q.value=0;
+  const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=Math.min(m.highcut, 22000); lp.Q.value=0;
+  bus.connect(hp); hp.connect(lp);
+  let node = lp;
+  if (m.mdrive > 0.001){ const sh = makeShaper(ctx, m.mdrive); node.connect(sh); node = sh; }
+  const sum = ctx.createGain();
+  const dry = ctx.createGain(); node.connect(dry); dry.connect(sum);
+  if (m.revMix > 0.001){
+    const conv = ctx.createConvolver(); conv.buffer = makeIR(ctx, m.revSize, m.revDamp);
+    const wet = ctx.createGain(); wet.gain.value = m.revMix;
+    node.connect(conv); conv.connect(wet); wet.connect(sum);
+    dry.gain.value = 1 - m.revMix*0.5;
+  }
+  if (m.dlyMix > 0.001){
+    const d = ctx.createDelay(2); d.delayTime.value = m.dlyTime;
+    const fb = ctx.createGain(); fb.gain.value = m.dlyFb;
+    const dl = ctx.createBiquadFilter(); dl.type='lowpass'; dl.frequency.value=5000;
+    const wet = ctx.createGain(); wet.gain.value = m.dlyMix;
+    node.connect(d); d.connect(dl); dl.connect(fb); fb.connect(d); dl.connect(wet); wet.connect(sum);
+  }
+  let out = sum;
+  if (m.comp > 0.001){
+    const c = ctx.createDynamicsCompressor();
+    c.threshold.value = -m.comp*30; c.ratio.value = 1+m.comp*7; c.knee.value = 6; c.attack.value = 0.003; c.release.value = 0.15;
+    out.connect(c); out = c;
+  }
+  out.connect(ctx.destination);
+  layers.forEach((l,i) => buildLayer(ctx, l, bus, seed*31+i*7+1));
+
+  const buf = await ctx.startRendering();
+  return finish(buf, m.peak);
+}
+
+function finish(buf, peakDb){
+  const L = buf.getChannelData(0), R = buf.getChannelData(1), n = L.length;
+  let peak = 0;
+  for (let i=0;i<n;i++){ const a = Math.abs(L[i]), b = Math.abs(R[i]); if (a>peak) peak=a; if (b>peak) peak=b; }
+  if (peak < 1e-7){ const z = Math.round(0.05*SR); return {L:new Float32Array(z), R:new Float32Array(z), dur:z/SR}; }
+  const thr = peak*Math.pow(10, -70/20);
+  let end = n;
+  while (end > 1 && Math.abs(L[end-1]) < thr && Math.abs(R[end-1]) < thr) end--;
+  end = Math.min(n, end + Math.round(0.01*SR));
+  const g = Math.pow(10, peakDb/20)/peak, fade = Math.min(end, Math.round(0.008*SR));
+  const oL = new Float32Array(end), oR = new Float32Array(end);
+  for (let i=0;i<end;i++){ const f = i > end-fade ? (end-i)/fade : 1; oL[i]=L[i]*g*f; oR[i]=R[i]*g*f; }
+  return {L:oL, R:oR, dur:end/SR};
+}
+
+// ---------- 파일 ----------
+const s16 = (x) => Math.max(-32768, Math.min(32767, Math.round(x*32767)));
+function wavBytes(r){
+  const n = r.L.length, buf = new ArrayBuffer(44+n*4), v = new DataView(buf);
+  const ws = (o,s) => { for (let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
+  ws(0,'RIFF'); v.setUint32(4,36+n*4,true); ws(8,'WAVE'); ws(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,2,true); v.setUint32(24,SR,true);
+  v.setUint32(28,SR*4,true); v.setUint16(32,4,true); v.setUint16(34,16,true);
+  ws(36,'data'); v.setUint32(40,n*4,true);
+  let o = 44;
+  for (let i=0;i<n;i++){ v.setInt16(o, s16(r.L[i]), true); v.setInt16(o+2, s16(r.R[i]), true); o += 4; }
+  return new Uint8Array(buf);
+}
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n=0;n<256;n++){ let c=n; for (let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c = 0xFFFFFFFF; for (let i=0;i<u8.length;i++) c = CRC_T[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function makeZip(files){
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (const f of files){
+    const nm = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true);
+    h.setUint16(10,0,true); h.setUint16(12,0x21,true); h.setUint32(14,crc,true); h.setUint32(18,size,true);
+    h.setUint32(22,size,true); h.setUint16(26,nm.length,true); h.setUint16(28,0,true);
+    parts.push(new Uint8Array(h.buffer), nm, f.data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true);
+    c.setUint16(10,0,true); c.setUint16(12,0,true); c.setUint16(14,0x21,true); c.setUint32(16,crc,true);
+    c.setUint32(20,size,true); c.setUint32(24,size,true); c.setUint16(28,nm.length,true);
+    c.setUint32(42,off,true);
+    central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + size;
+  }
+  const cd = central.reduce((a,b) => a+b.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true);
+  e.setUint32(12,cd,true); e.setUint32(16,off,true);
+  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], {type:'application/zip'});
+}
+function download(blob, name){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+async function renderVariants(snd, name){
+  const cnt = Math.max(1, Math.round(snd.master.count)), files = [];
+  for (let k=1; k<=cnt; k++){
+    const r = await renderSound(snd, {seed:k, vary: k===1 ? 0 : snd.master.vary});
+    files.push({name: cnt===1 ? `${name}.wav` : `${name}_${k}.wav`, data: wavBytes(r)});
+  }
+  return files;
+}
+
+// ---------- 저장 ----------
+let lib = {}, custom = [], cur = 'click';
+const hist = {};
+function pickKnown(src, def){
+  const o = structuredClone(def);
+  if (src && typeof src === 'object') for (const k in def) if (typeof src[k] === typeof def[k]) o[k] = src[k];
+  return o;
+}
+function sanitize(s){
+  if (!s || !Array.isArray(s.layers) || !s.layers.length) return null;
+  return {layers: s.layers.slice(0,8).map(l => pickKnown(l, LAYER_DEFAULT)), master: pickKnown(s.master, MASTER_DEFAULT)};
+}
+function load(){
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (d){
+      for (const k in (d.lib||{})){ const s = sanitize(d.lib[k]); if (s) lib[k] = s; }
+      custom = (d.custom||[]).filter(n => lib[n] && !PRESETS[n]);
+      if (lib[d.cur]) cur = d.cur;
+    }
+  } catch(e){}
+  for (const k in PRESETS) if (!lib[k]) lib[k] = structuredClone(PRESETS[k]);
+}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify({lib, custom, cur})); } catch(e){} }
+const snd = () => lib[cur];
+const canon = (s) => JSON.stringify(s, (k,v) => k==='solo' ? undefined : v);
+const isChanged = (n) => !!PRESETS[n] && canon(lib[n]) !== canon(PRESETS[n]);
+function pushHistory(){ const a = hist[cur] ??= []; a.push(JSON.stringify(snd())); if (a.length > 80) a.shift(); }
+
+// ---------- 화면 ----------
+function h(tag, attrs={}, ...kids){
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)){
+    if (k==='class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v===true ? '' : v);
+  }
+  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(k));
+  return e;
+}
+let statusT = 0;
+function status(msg, keep){
+  const s = $('#status'); s.textContent = msg; s.classList.add('show');
+  clearTimeout(statusT); if (!keep) statusT = setTimeout(() => s.classList.remove('show'), 1800);
+}
+
+let editing = false, renderT = 0;
+function changed(final){
+  save(); markOne(cur);
+  clearTimeout(renderT);
+  if (final) refresh($('#auto').checked);
+  else renderT = setTimeout(() => refresh(false), 90);
+}
+
+function slider(obj, key, d, after){
+  const inp = h('input', {type:'range', min:0, max:1000, step:1});
+  inp.value = Math.round(toPos(d, obj[key])*1000);
+  const val = h('span', {class:'pv', title:'두 번 눌러 직접 입력'}, fmt(d, obj[key]));
+  inp.addEventListener('input', () => {
+    if (!editing){ pushHistory(); editing = true; }
+    obj[key] = fromPos(d, inp.value/1000); val.textContent = fmt(d, obj[key]); after && after(); changed(false);
+  });
+  inp.addEventListener('change', () => { editing = false; changed(true); });
+  val.addEventListener('dblclick', () => {
+    const s = prompt(`${d.t} (${d.min} ~ ${d.max})`, obj[key]); if (s == null) return;
+    const x = parseFloat(s); if (!isFinite(x)) return;
+    pushHistory(); obj[key] = clamp(x, d.min, d.max);
+    inp.value = Math.round(toPos(d, obj[key])*1000); val.textContent = fmt(d, obj[key]); after && after(); changed(true);
+  });
+  return h('div', {class:'p', title:d.tip||''}, h('span',{class:'pl'}, d.t), inp, val);
+}
+function select(obj, key, d){
+  const s = h('select', {}, d.opts.map(([v,t]) => h('option', {value:v, selected: obj[key]===v}, t)));
+  s.addEventListener('change', () => { pushHistory(); obj[key] = s.value; buildEditor(); changed(true); });
+  return h('div', {class:'p'}, h('span',{class:'pl'}, d.t), s);
+}
+const lenText = (l) => `${fmt({u:'s'}, l.delay)}부터 ${fmt({u:'s'}, layerLen(l))}`;
+
+function layerCard(l, i){
+  const s = snd(), color = COLORS[i % COLORS.length];
+  const len = h('span', {class:'llen'}, lenText(l));
+  const upd = () => { len.textContent = lenText(l); };
+  const on = h('input', {type:'checkbox', title:'켜기/끄기'}); on.checked = l.on;
+  on.addEventListener('change', () => { pushHistory(); l.on = on.checked; card.classList.toggle('off', !l.on); changed(true); });
+  const head = h('div', {class:'lhead'},
+    on,
+    h('input', {class:'lname', value:l.name||'', placeholder:'층 '+(i+1), oninput:(e) => { l.name = e.target.value; save(); }}),
+    len,
+    h('button', {class:'btn small'+(l.solo?' on':''), title:'이 층만 듣기 (저장할 때는 모든 층이 들어간다)', onclick:() => { l.solo = !l.solo; buildEditor(); changed(true); }}, '혼자'),
+    h('button', {class:'btn small', title:'위로', disabled: i===0, onclick:() => { pushHistory(); s.layers.splice(i-1, 0, s.layers.splice(i,1)[0]); buildEditor(); changed(true); }}, '↑'),
+    h('button', {class:'btn small', title:'아래로', disabled: i===s.layers.length-1, onclick:() => { pushHistory(); s.layers.splice(i+1, 0, s.layers.splice(i,1)[0]); buildEditor(); changed(true); }}, '↓'),
+    h('button', {class:'btn small', title:'복제', disabled: s.layers.length>=8, onclick:() => { pushHistory(); const c = structuredClone(l); c.solo = false; s.layers.splice(i+1, 0, c); buildEditor(); changed(true); }}, '복제'),
+    h('button', {class:'btn small', title:'지우기', disabled: s.layers.length<=1, onclick:() => { pushHistory(); s.layers.splice(i,1); buildEditor(); changed(true); }}, '✕'),
+  );
+  const body = h('div', {class:'lbody'});
+  for (const sec of LAYER_SECTIONS){
+    if (sec.when && !sec.when(l)) continue;
+    const box = h('div', {class:'sec'}, h('h4', {}, sec.t));
+    for (const k of sec.items){
+      if (VIS[k] && !VIS[k](l)) continue;
+      box.append(SEL[k] ? select(l, k, SEL[k]) : slider(l, k, PD[k], upd));
+    }
+    body.append(box);
+  }
+  const card = h('div', {class:'layer'+(l.on?'':' off'), style:`--lc:${color}`}, head, body);
+  return card;
+}
+
+function buildEditor(){
+  const s = snd();
+  $('#cueName').textContent = cur;
+  $('#cueHint').textContent = PRESETS[cur] ? `Godot: scenes/sounds.tscn → ${cur} 노드의 streams에 넣는다` : '내가 만든 소리';
+  $('#bReset').disabled = !PRESETS[cur];
+  $('#bDel').disabled = !!PRESETS[cur];
+  const root = $('#layers'); root.innerHTML = '';
+  s.layers.forEach((l,i) => root.append(layerCard(l,i)));
+  $('#bAdd').disabled = s.layers.length >= 8;
+  const m = $('#master'); m.innerHTML = '';
+  const body = h('div', {class:'lbody'});
+  for (const sec of MASTER_SECTIONS){
+    const box = h('div', {class:'sec'}, h('h4', {}, sec.t));
+    for (const k of sec.items) box.append(slider(s.master, k, MD[k]));
+    body.append(box);
+  }
+  m.append(h('div', {class:'layer master'}, h('div', {class:'lhead'}, h('b', {}, '전체'), h('span',{class:'llen'}, '모든 층을 합친 뒤에 거는 효과')), body));
+}
+
+function buildList(){
+  const el = $('#list'); el.innerHTML = '';
+  const groups = [...GROUPS]; if (custom.length) groups.push(['내 소리', custom]);
+  for (const [g, names] of groups){
+    el.append(h('div', {class:'grp'}, g));
+    for (const n of names){
+      el.append(h('button', {class:'cue'+(n===cur?' cur':'')+(isChanged(n)?' changed':''), 'data-n':n, title: isChanged(n) ? '프리셋에서 바뀜' : '', onclick:() => selectCue(n)},
+        h('span', {}, n), h('i', {class:'mod'})));
+    }
+  }
+}
+function markOne(n){
+  const b = document.querySelector(`.cue[data-n="${CSS.escape(n)}"]`);
+  if (b){ const c = isChanged(n); b.classList.toggle('changed', c); b.title = c ? '프리셋에서 바뀜' : ''; }
+}
+function selectCue(n){
+  cur = n; save(); buildList(); buildEditor(); refresh($('#auto').checked);
+}
+
+// ---------- 듣기와 파형 ----------
+let actx = null, playing = null, playStart = 0, playDur = 0, shown = null, shownVariant = false, seq = 0;
+async function refresh(play){
+  const id = ++seq;
+  const r = await renderSound(snd(), {solo:true});
+  if (id !== seq) return;
+  shown = r; shownVariant = false; drawWave();
+  if (play) playR(r);
+}
+function audio(){
+  if (!actx){ try { actx = new AudioContext({sampleRate:SR}); } catch(e){ actx = new AudioContext(); } }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+function playR(r){
+  const a = audio();
+  if (playing) try { playing.stop(); } catch(e){}
+  const b = a.createBuffer(2, r.L.length, SR); b.copyToChannel(r.L, 0); b.copyToChannel(r.R, 1);
+  const s = a.createBufferSource(); s.buffer = b; s.connect(a.destination); s.start();
+  playing = s; playStart = a.currentTime; playDur = r.dur;
+  requestAnimationFrame(tick);
+}
+function tick(){
+  const ph = $('#playhead');
+  if (!actx || !shown){ ph.style.opacity = 0; return; }
+  const t = actx.currentTime - playStart;
+  if (t > playDur){ ph.style.opacity = 0; return; }
+  ph.style.opacity = 0.8; ph.style.left = (t/Math.max(shown.dur,0.05)*100)+'%';
+  requestAnimationFrame(tick);
+}
+function play(){
+  if (shown && !shownVariant) { clearTimeout(renderT); refresh(true); }
+  else refresh(true);
+}
+async function playVariant(){
+  const id = ++seq;
+  const r = await renderSound(snd(), {seed: 2+Math.floor(Math.random()*1e6), vary: snd().master.vary || 0.3, solo:true});
+  if (id !== seq) return;
+  shown = r; shownVariant = true; drawWave(); playR(r);
+}
+function niceStep(d){ for (const s of [0.01,0.02,0.05,0.1,0.2,0.25,0.5,1,2]) if (d/s <= 10) return s; return 5; }
+function drawWave(){
+  const c = $('#wave'), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  if (!W || !H) return;
+  c.width = W*dpr; c.height = H*dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0,0,W,H);
+  const s = snd(), r = shown, dur = r ? Math.max(r.dur, 0.05) : 1;
+  const lays = s.layers.map((l,i) => ({l,i})).filter(o => o.l.on);
+  const anySolo = lays.some(o => o.l.solo);
+  const barH = 5, gap = 3, barsH = lays.length*(barH+gap) + 8, top = 6, wh = H - barsH - top - 16;
+  const step = niceStep(dur);
+  g.font = '10px system-ui'; g.fillStyle = '#5d667a'; g.strokeStyle = '#1e2330'; g.lineWidth = 1;
+  for (let t=0; t<=dur+1e-9; t+=step){
+    const x = Math.round(t/dur*W)+0.5;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+    g.fillText(t<1 ? Math.round(t*1000)+'ms' : t.toFixed(t%1?2:0)+'s', x+3, H-4);
+  }
+  const mid = top + wh/2;
+  g.strokeStyle = '#262c3b'; g.beginPath(); g.moveTo(0, mid+0.5); g.lineTo(W, mid+0.5); g.stroke();
+  if (r){
+    const n = r.L.length; g.fillStyle = shownVariant ? '#c58bff' : '#7aa2ff';
+    for (let x=0; x<W; x++){
+      const a = Math.floor(x/W*n), b = Math.max(a+1, Math.floor((x+1)/W*n));
+      let mn = 0, mx = 0;
+      for (let i=a; i<b && i<n; i++){ const v = (r.L[i]+r.R[i])*0.5; if (v<mn) mn=v; if (v>mx) mx=v; }
+      g.fillRect(x, mid - mx*wh/2, 1, Math.max(1, (mx-mn)*wh/2));
+    }
+  }
+  lays.forEach((o,k) => {
+    const y = top + wh + 8 + k*(barH+gap);
+    const x0 = o.l.delay/dur*W, x1 = (o.l.delay+layerLen(o.l))/dur*W;
+    g.globalAlpha = anySolo && !o.l.solo ? 0.2 : 0.85;
+    g.fillStyle = COLORS[o.i % COLORS.length];
+    g.fillRect(x0, y, Math.max(2, x1-x0), barH);
+  });
+  g.globalAlpha = 1;
+  $('#waveInfo').textContent = r ? `길이 ${r.dur.toFixed(2)}초 · ${shownVariant ? '변주 하나' : '기본'}${anySolo ? ' · 혼자 듣는 층만' : ''}` : '';
+}
+
+// ---------- 바꾸기 ----------
+function mutate(amt){
+  pushHistory();
+  const s = snd(), r = Math.random;
+  for (const l of s.layers){
+    const same = l.f0 === l.f1, sameC = l.cut0 === l.cut1;
+    for (const k in PD){
+      if (k === 'voices') continue;
+      const d = PD[k], w = k==='gain' ? 0.4 : (k==='delay'||k==='pan') ? 0.3 : 1;
+      l[k] = fromPos(d, clamp(toPos(d, l[k]) + (r()*2-1)*amt*w, 0, 1));
+    }
+    if (same) l.f1 = l.f0;
+    if (sameC) l.cut1 = l.cut0;
+  }
+  buildEditor(); changed(true);
+}
+
+// ---------- 버튼 ----------
+$('#bPlay').onclick = play;
+$('#bVar').onclick = playVariant;
+$('#waveBox').onclick = play;
+$('#bMutS').onclick = () => mutate(0.06);
+$('#bMutL').onclick = () => mutate(0.2);
+function undo(){
+  const a = hist[cur]; if (!a || !a.length){ status('되돌릴 것이 없다'); return; }
+  lib[cur] = JSON.parse(a.pop()); buildEditor(); changed(true);
+}
+$('#bUndo').onclick = undo;
+$('#bReset').onclick = () => { if (!PRESETS[cur]) return; pushHistory(); lib[cur] = structuredClone(PRESETS[cur]); buildEditor(); changed(true); status('처음 값으로 돌렸다'); };
+$('#bAdd').onclick = () => {
+  pushHistory(); const s = snd();
+  s.layers.push(L({name:'', gain:0.5, decay:0.3}));
+  buildEditor(); changed(true);
+};
+$('#bWav').onclick = async () => {
+  const r = await renderSound(snd(), {seed:1});
+  download(new Blob([wavBytes(r)], {type:'audio/wav'}), `${cur}.wav`);
+  status(`${cur}.wav 저장`);
+};
+$('#bZip').onclick = async () => {
+  status('만드는 중…', true);
+  const files = await renderVariants(snd(), cur);
+  if (files.length === 1) download(new Blob([files[0].data], {type:'audio/wav'}), files[0].name);
+  else download(makeZip(files), `${cur}.zip`);
+  status(`${files.length}개 저장`);
+};
+$('#bAll').onclick = async () => {
+  const names = [...GROUPS.flatMap(g => g[1]), ...custom], files = [];
+  for (let i=0; i<names.length; i++){
+    status(`만드는 중… ${i+1}/${names.length} ${names[i]}`, true);
+    files.push(...await renderVariants(lib[names[i]], names[i]));
+  }
+  download(makeZip(files), 'sfx_all.zip');
+  status(`소리 ${names.length}개, WAV ${files.length}개 저장`);
+};
+$('#bSave').onclick = () => {
+  download(new Blob([JSON.stringify({app:'sfx-bench', version:1, lib, custom}, null, 1)], {type:'application/json'}), 'sfx_library.json');
+};
+$('#bLoad').onclick = () => $('#fLoad').click();
+$('#fLoad').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text()); let n = 0;
+    for (const k in (d.lib||{})){
+      const s = sanitize(d.lib[k]); if (!s) continue;
+      lib[k] = s; n++;
+      if (!PRESETS[k] && !custom.includes(k)) custom.push(k);
+    }
+    save(); buildList(); buildEditor(); refresh(false);
+    status(`소리 ${n}개 불러옴`);
+  } catch(err){ status('불러오지 못했다: JSON이 아니다'); }
+};
+$('#bNew').onclick = () => {
+  const name = (prompt('새 소리 이름 (영문, 숫자, _)', cur+'_2') || '').trim();
+  if (!name) return;
+  if (!/^[A-Za-z0-9_\-]+$/.test(name)){ status('이름은 영문, 숫자, _, - 만 쓴다'); return; }
+  if (lib[name]){ status('이미 있는 이름이다'); return; }
+  lib[name] = structuredClone(snd()); custom.push(name); selectCue(name);
+};
+$('#bDel').onclick = () => {
+  if (PRESETS[cur]) return;
+  if (!confirm(`${cur} 을(를) 지울까요?`)) return;
+  delete lib[cur]; custom = custom.filter(n => n !== cur); delete hist[cur];
+  selectCue('click');
+};
+const AUTO_KEY = 'sfxbench.autoplay';
+try { $('#auto').checked = localStorage.getItem(AUTO_KEY) !== '0'; } catch(e){ $('#auto').checked = true; }
+$('#auto').onchange = () => { try { localStorage.setItem(AUTO_KEY, $('#auto').checked ? '1' : '0'); } catch(e){} };
+
+document.addEventListener('keydown', (e) => {
+  const t = e.target, typing = (t.tagName === 'INPUT' && t.type === 'text') || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
+  if (typing) return;
+  if (e.code === 'Space'){ e.preventDefault(); play(); }
+  else if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey){ e.preventDefault(); playVariant(); }
+  else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); undo(); }
+});
+window.addEventListener('resize', drawWave);
+
+load(); buildList(); buildEditor(); refresh(false);
+</script>
+</body>
+</html>
